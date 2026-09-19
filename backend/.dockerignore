@@ -1,0 +1,30 @@
+# 构建产物与依赖
+bin/
+obj/
+node_modules/
+dist/
+.vite/
+
+# 运行时产物（容器里挂卷，不进镜像）
+screenshots/
+traces/
+recordings/
+.run/
+*.log
+
+# 凭据与环境
+.env
+.env.local
+.env.worker
+
+# 测试与缓存
+TestResults/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# 版本控制
+.git/
+.gitignore
+*.md
+docs/

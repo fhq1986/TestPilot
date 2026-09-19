@@ -1,0 +1,66 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# 环境变量（本地敏感配置）
+/deploy/.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Playwright / 截图
+screenshots/
+
+# AI Worker
+.env.worker
+__pycache__/
+.pytest_cache/
+
+
+# 本地运行态（PID / 日志）
+.run/
+
+# 调试遗留日志（服务日志统一放 .run/logs/）
+/*.log
+
+# 运行时数据 / 本地服务
+.minio-data/
+.playwright-cli/
+.workbuddy/
+backend/src/AI.TestPlatform.Api/recordings/
+backend/src/AI.TestPlatform.Api/traces/
+
+# 本地验证产生的截图与录制脚本
+/*.png
+/login.yaml
+/after-login.yaml
+
+# 本地排障临时文件（保留在磁盘，不入库）
+/.*.txt
+/.*.sql
+/.*.json
+/.minioclient-test/
+/.reflect-test/
+.fake-jira.py
+.temp/
+.trae/
+.workbuddy/
+.minio-data/
+docs/
+
+# 生产环境配置不入仓库（含真实连接串/密钥时）
+appsettings.Production.json
