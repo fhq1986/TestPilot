@@ -105,7 +105,6 @@ bash scripts/start-all.sh
 | 📖 Swagger | http://localhost:5210/swagger |
 | 🤖 AIWorker | http://127.0.0.1:8000 |
 
- **线上体验地址：http://111.231.19.163:8088 （账号`demo/Demo@13456`）** 
 
 ### 常用命令
 
