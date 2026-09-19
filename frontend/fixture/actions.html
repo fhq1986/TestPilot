@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <title>动作与断言自检页</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 24px; line-height: 2; }
+    label { display: inline-block; width: 90px; }
+    #menu { margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <h1>动作与断言自检页</h1>
+  <p>这个页面只服务于自动化测试：每个控件都配了一个"回声"元素，
+     动作有没有真的生效由它能读到什么来决定，而不是靠截图猜。</p>
+
+  <!-- Select：下拉选择 -->
+  <div>
+    <label for="status">状态</label>
+    <select id="status">
+      <option value="">请选择</option>
+      <option value="draft">草稿</option>
+      <option value="approved">已通过</option>
+    </select>
+  </div>
+  <div id="status-echo">未选择</div>
+
+  <!-- Fill / AssertValue / PressKey：输入与按键 -->
+  <div>
+    <label for="name">名称</label>
+    <input id="name" type="text" />
+  </div>
+  <div id="key-echo">未按键</div>
+
+  <!-- UploadFile：文件上传 -->
+  <div>
+    <label for="file">附件</label>
+    <input id="file" type="file" multiple />
+  </div>
+  <div id="file-echo">未上传</div>
+
+  <!-- Hover：悬浮展开菜单（display 初始为 none，只有真的 hover 才出现） -->
+  <div>
+    <label>更多操作</label>
+    <button id="menu-trigger">⋯</button>
+    <span id="menu" style="display: none"><a href="#" id="menu-item">导出</a></span>
+  </div>
+
+  <!-- AssertAttribute -->
+  <div id="meta" data-status="ready">元信息</div>
+
+  <!-- AssertCount -->
+  <ul>
+    <li class="item">1</li>
+    <li class="item">2</li>
+    <li class="item">3</li>
+  </ul>
+
+  <!-- AssertState：禁用 / 勾选 / 隐藏 -->
+  <div><button id="save-button" disabled>保存</button></div>
+  <div><input id="agree" type="checkbox" checked /> 同意条款</div>
+  <div id="hidden-box" style="display: none">隐藏内容</div>
+
+  <script>
+    const status = document.getElementById('status')
+    status.addEventListener('change', () => {
+      document.getElementById('status-echo').textContent = '已选:' + status.value
+    })
+
+    const name = document.getElementById('name')
+    name.addEventListener('keydown', (e) => {
+      document.getElementById('key-echo').textContent = '按键:' + e.key
+    })
+
+    const file = document.getElementById('file')
+    file.addEventListener('change', () => {
+      document.getElementById('file-echo').textContent = '文件数:' + file.files.length
+    })
+
+    // mouseenter 与 mouseover 都挂上：不同引擎/不同驱动路径触发的可能是其中任一个
+    const trigger = document.getElementById('menu-trigger')
+    const menu = document.getElementById('menu')
+    const showMenu = () => { menu.style.display = 'inline' }
+    trigger.addEventListener('mouseenter', showMenu)
+    trigger.addEventListener('mouseover', showMenu)
+  </script>
+</body>
+</html>

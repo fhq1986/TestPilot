@@ -1,0 +1,212 @@
+/* =============================================================================
+   移动端适配层（全局）
+
+   断点口径（必须与 src/constants/breakpoints.ts 保持一致，改一处要同步另一处）：
+     mobile  : <= 767px
+     tablet  : 768 – 1023px
+     desktop : >= 1024px   ← 本文件**所有**规则都不作用于它
+
+   ⚠️ 两条纪律：
+   1. 所有规则都必须包在媒体查询里。desktop（>= 1024px）像素级零变化是本层最重要的
+      不变量 —— 一旦有规则漏到媒体查询外面，桌面端就会跟着变，而桌面端才是主战场。
+   2. 这里只处理 **Element Plus 全局组件**与通用工具类。组件自己的布局
+      （如 MainLayout 的 .main-content 内边距）留在组件的 scoped 样式里做：
+      scoped 选择器带 [data-v-*] 属性，特异性高于这里的类选择器，
+      硬在这里覆盖就得上 !important，改一处脏一处。
+
+   为什么用 !important：弹窗的 width 是 Element Plus 通过内联样式写上去的，
+   内联优先级高于样式表，只能靠 !important 压过。下面带 !important 的规则都属这一类，
+   已在各自位置注明原因。
+   ============================================================================= */
+
+/* ---------------------------------------------------------------- 窄屏（平板 + 手机） */
+
+@media (max-width: 1023px) {
+  /* 弹窗宽度：桌面上写死的 600px 在窄屏会超出视口。
+     1023px 这一档不直接退到手机值，否则平板上会得到一个偏窄的表单框 */
+  .el-dialog {
+    width: min(94vw, 620px) !important; /* 内联 width 覆盖，必须 !important */
+    margin-top: 6vh !important;
+  }
+
+  .el-dialog__body {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  /* iOS 惯性滚动：表格/抽屉里的长内容默认滚起来很"涩" */
+  .el-scrollbar__wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ---------------------------------------------------------------- 手机（<= 767px） */
+
+@media (max-width: 767px) {
+  /* 弹窗：手机上再收窄一档，左右各留 4% 边距 */
+  .el-dialog {
+    width: 92vw !important;
+    max-width: 560px;
+    margin-top: 4vh !important;
+  }
+
+  .el-dialog__body {
+    padding: 16px 16px 20px;
+  }
+
+  .el-dialog__header {
+    padding: 14px 16px 8px;
+  }
+
+  .el-dialog__footer {
+    padding: 12px 16px 16px;
+  }
+
+  /* 描述列表是多列 <table>，手机上必然横向溢出。
+     把表格整体「拆平」成块级堆叠：tr / td 都改成 block，
+     原来的「label | value」横向排列就变成 label 一行、value 一行 ——
+     比横向滚动好，因为字段名和值不会被拆到两屏之外。
+     平板（768–1023px）不这么做：900px 放三列描述本来就很合适。
+     兜底再给 body 一个 overflow-x，万一某个描述项里塞了宽内容也不会撑破卡片。 */
+  .el-descriptions__table,
+  .el-descriptions__body .el-descriptions__table tbody,
+  .el-descriptions__body .el-descriptions__table tr,
+  .el-descriptions__cell {
+    display: block;
+    width: 100%;
+  }
+
+  .el-descriptions__cell {
+    width: 100% !important; /* label 宽度是内联样式写上去的 */
+    text-align: left;
+  }
+
+  .el-descriptions__body {
+    overflow-x: auto;
+  }
+
+  /* 消息框与提示：桌面的固定最小宽在 375px 上会顶到屏幕外 */
+  .el-message-box {
+    width: 90vw !important;
+    max-width: 420px;
+  }
+
+  .el-message {
+    min-width: 0 !important;
+    width: 90vw;
+    max-width: 420px;
+  }
+
+  /* 表单：左侧 label 会把输入框挤到几乎没有宽度。
+     这里等价于给所有表单加 `label-position="top"`，但不必去改几十个调用点。
+     Element Plus 的 .el-form-item 本身是 flex 行布局，所以要改的是 flex-direction。 */
+  .el-form-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .el-form-item__label {
+    width: 100% !important; /* label-width 是内联 width，必须 !important */
+    height: auto !important;
+    padding: 0 0 4px !important;
+    line-height: 1.4;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .el-form-item__content {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+
+  /* 行内表单本来想并排，手机上没地方可并 —— 改成上下排并去掉右侧间距 */
+  .el-form--inline .el-form-item {
+    display: flex;
+    margin-right: 0;
+  }
+
+  /* 栅格：手机上统一单列。桌面上精心排的 12/8/6 栏在这里只会把内容压扁，
+     堆成一列反而更好读 —— 代价是仪表盘那种卡片网格也会变成一列，符合预期 */
+  .el-col {
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
+  }
+
+  /* 触控目标：手指点不准 24px 高的按钮。文字/链接按钮是表格内联操作，不动它们 */
+  .el-button:not(.is-text):not(.is-link) {
+    min-height: 40px;
+  }
+
+  .el-button--small:not(.is-text):not(.is-link) {
+    min-height: 34px;
+  }
+
+  /* 分页：手机上 total + 每页条数 + 页码 + 跳页会顶出屏幕。
+     不隐藏它们（那就等于砍功能），改成允许折行并居中 */
+  .el-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
+  }
+
+  /* 卡片内边距收一档，给内容腾出宽度 */
+  .el-card__header {
+    padding: 12px 14px;
+  }
+
+  .el-card__body {
+    padding: 14px;
+  }
+
+  /* 表格：低频页的兜底方案 —— el-table 自带横向滚动，这里只把字号与行高收一档，
+     让同样的内容在 375px 上少横滚一点 */
+  .el-table {
+    font-size: 12px;
+  }
+
+  .el-table th.el-table__cell {
+    height: 40px;
+  }
+
+  .el-table .cell {
+    padding: 0 8px;
+  }
+
+  /* 折叠面板标题里的操作按钮在窄屏容易与箭头挤在一起 */
+  .el-collapse-item__header {
+    padding-right: 8px;
+  }
+
+  /* 抽屉（移动端导航容器）：默认内边距在手机上偏大 */
+  .el-drawer__body {
+    padding: 0;
+  }
+
+  /* 页面里给表单控件写死的像素宽，在 375px 的内容区（320px 出头）里会溢出：
+     实测有 380px 的下拉、320px 的输入框。统一加个上限，让它们**收缩**而不是
+     把卡片撑出横向滚动。
+
+     为什么用 max-width 而不是 width：桌面上的定宽意图要保留
+     （「这个下拉只要 120px」是刻意的），max-width 只封顶、不强行拉宽。
+     也正因为只设 max-width，与页面里 `.xxx-select { width: 380px }` 这类规则
+     **不构成属性冲突**（一个管 width 一个管 max-width），所以这里不需要 !important。 */
+  .el-select,
+  .el-input,
+  .el-textarea,
+  .el-date-editor,
+  .el-input-number,
+  .el-cascader,
+  .el-autocomplete {
+    max-width: 100%;
+  }
+
+  /* 各列表页顶部的筛选/操作栏。
+     类名 `toolbar` 在 12 个页面里复用、`filter-bar` 在 2 个页面里复用，正好一处覆盖全部 ——
+     包括本次没有逐页改造的低频页（定时任务、Mock、共享步骤、审计日志等），
+     它们桌面上是一行 flex，手机上不给折行就会把按钮挤出屏幕。
+     ⚠️ 这条规则依赖那些页面里的类名，改名会让它静默失效（没有测试会报警）。 */
+  .toolbar,
+  .filter-bar {
+    flex-wrap: wrap;
+  }
+}

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>视觉时间戳验证页</title>
+<style>
+  body { margin: 0; font-family: sans-serif; background: #fff; }
+  header { padding: 12px 24px; background: #1f2d3d; color: #fff; font-size: 20px; }
+  .stamp { position: absolute; top: 70px; right: 24px; font-size: 14px; color: #333; }
+  .block { position: absolute; top: 200px; left: 200px; width: 200px; height: 120px;
+           background: #42b883; display: flex; align-items: center; justify-content: center;
+           color: #fff; font-size: 18px; }
+</style></head>
+<body>
+  <header>视觉基线验证页</header>
+  <div class="stamp" id="stamp"></div>
+  <div class="block">稳定区块</div>
+  <script>
+    document.getElementById('stamp').textContent = new Date().toISOString() + ' #' + Math.random().toString(36).slice(2, 8);
+  </script>
+</body>
+</html>

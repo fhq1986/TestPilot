@@ -1,0 +1,138 @@
+/* =============================================================================
+   全局表格样式：统一 el-table 的观感（表头、行高、hover、边框、滚动条）
+   主色沿用平台的 #1F3B73（深蓝），让表格与卡片/报告风格一致
+   ============================================================================= */
+
+.el-table {
+  /* 变量必须覆盖在 .el-table 上：Element Plus 自身就定义在这一层，:root 会被其优先级压过 */
+  --el-table-header-bg-color: #f4f8fd;
+  --el-table-header-text-color: #1f3b73;
+  --el-table-text-color: #303133;
+  --el-table-border-color: #d5e0ee;
+  --el-table-row-hover-bg-color: #f0f6ff;
+  --el-table-current-row-bg-color: #eaf1fb;
+  --el-table-tr-bg-color: #ffffff;
+
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* ---- 表头：浅蓝底、深蓝加粗、略高行高 ---- */
+.el-table th.el-table__cell {
+  height: 46px;
+  padding: 0;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  background-color: #f4f8fd !important;
+}
+
+.el-table th.el-table__cell > .cell,
+.el-table th.el-table__cell .el-checkbox__label {
+  color: #1f3b73;
+}
+
+/* 表头底部分隔线加重，视觉上把表头与数据分开 */
+.el-table th.el-table__cell {
+  border-bottom: 1px solid #c3d3e8 !important;
+}
+
+/* ---- 数据行：更高、更松、浅色底线 ---- */
+.el-table td.el-table__cell {
+  padding: 11px 0;
+  border-bottom: 1px solid var(--el-table-border-color);
+}
+
+.el-table .cell {
+  padding: 0 12px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+/* 最后一行去掉底线，避免与卡片底边重叠成双线 */
+.el-table__body tr:last-child td.el-table__cell {
+  border-bottom: none;
+}
+
+/* 表格外框：比内部行线略深，勾出整体轮廓 */
+.el-table--fit {
+  border: 1px solid #cfdcec;
+}
+
+/* ---- 交互态 ---- */
+.el-table__body tr:hover > td.el-table__cell {
+  background-color: var(--el-table-row-hover-bg-color) !important;
+}
+
+.el-table__body tr.current-row > td.el-table__cell {
+  background-color: var(--el-table-current-row-bg-color) !important;
+}
+
+/* 选中行：勾选框所在行给一层淡蓝底，便于确认选择了哪些 */
+.el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: #fafcff;
+}
+
+/* 勾选行：淡蓝底 + 左侧强调条 */
+.el-table__body tr.el-table__row--selected td.el-table__cell,
+.el-table__body tr:has(.el-checkbox.is-checked) td.el-table__cell {
+  background-color: #eef5ff !important;
+}
+
+/* 大列表（撑满布局）滚动条美化：细、圆角、悬停加深 */
+.el-table__body-wrapper::-webkit-scrollbar,
+.el-table__header-wrapper::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-thumb,
+.el-table__header-wrapper::-webkit-scrollbar-thumb {
+  background-color: #c9d8ea;
+  border-radius: 4px;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-thumb:hover,
+.el-table__header-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: #a9c0dd;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-track,
+.el-table__header-wrapper::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* ---- 空数据 ---- */
+.el-table__empty-block {
+  min-height: 160px;
+}
+
+.el-table__empty-text {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+/* ---- 小尺寸表格（对话框内的结果表）不要跟着放大 ---- */
+.el-table--small th.el-table__cell {
+  height: 38px;
+}
+
+.el-table--small td.el-table__cell {
+  padding: 7px 0;
+}
+
+.el-table--small .cell {
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ---- 操作列内的链接按钮：默认略微留白，悬停更明显 ---- */
+.el-table .el-button.is-link {
+  font-size: 13px;
+}
+
+/* ---- 分页器：与表格右对齐、间距统一 ---- */
+.el-pagination {
+  --el-pagination-font-size: 13px;
+  font-weight: 400;
+}
