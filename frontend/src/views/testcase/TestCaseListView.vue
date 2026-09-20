@@ -19,6 +19,12 @@
         <el-checkbox v-model="flakyOnly" class="flaky-filter" @change="load(1)">
           仅看不稳定用例
         </el-checkbox>
+        <!-- 从需求覆盖页跳过来时带的筛选：给个显眼的标识 + 一键清除，
+             否则用户看着被过滤的列表会以为用例丢了 -->
+        <el-tag v-if="requirementFilterId" type="warning" effect="plain" closable
+          @close="clearRequirementFilter">
+          关联需求：{{ requirementFilterTitle || requirementFilterId }}
+        </el-tag>
         <el-button type="success" :icon="VideoPlay" :disabled="selectedRows.length === 0" @click="openBatchDialog">
           批量执行（{{ selectedRows.length }}）
         </el-button>
@@ -434,7 +440,7 @@ import { batchExecute } from '@/api/execution'
 import { listTestPlansApi } from '@/api/testPlan'
 import { exportScript, importScript, parseScript, type ScriptParseResult } from '@/api/script'
 import { getEnvironments } from '@/api/environment'
-import { getRequirements } from '@/api/requirement'
+import { getRequirement, getRequirements } from '@/api/requirement'
 import type { RequirementListItem } from '@/types/requirement'
 import { formatDateTime } from '@/utils/formatter'
 import { EXECUTION_STATUS_LABELS, executionStatusTagType } from '@/types/execution'
@@ -473,6 +479,24 @@ const execStateFilter = ref<number | undefined>(
 )
 // ------------------------------------------------------------ flake（不稳定用例）
 const flakyOnly = ref(route.query.flakyOnly === 'true')
+/**
+ * 按「关联需求」筛选：需求覆盖页点「关联用例」数字跳过来时带 requirementId。
+ * 这里只认 URL 上的 id，标题另外查一次用于展示筛选标识（否则用户只看到一堆用例，
+ * 不知道当前被过滤了）。
+ */
+const requirementFilterId = ref(
+  typeof route.query.requirementId === 'string' ? route.query.requirementId : '',
+)
+const requirementFilterTitle = ref('')
+
+const clearRequirementFilter = () => {
+  requirementFilterId.value = ''
+  requirementFilterTitle.value = ''
+  const query = { ...route.query }
+  delete query.requirementId
+  void router.replace({ query })
+  void load(1)
+}
 const resettingFlake = ref(false)
 /** 选中行中仍带不稳定标记的数量（决定「解除标记」按钮是否可用） */
 const flakySelectedCount = computed(() => selectedRows.value.filter((r) => r.isFlaky).length)
@@ -770,6 +794,7 @@ const load = async (targetPage?: number) => {
       projectId: projectId.value || undefined,
       search: search.value || undefined,
       module: moduleFilter.value || undefined,
+      requirementId: requirementFilterId.value || undefined,
       flakyOnly: flakyOnly.value || undefined,
       // 清空 el-select 后拿到的可能是 '' 或 undefined；直接透传会被后端当成枚举解析而 400，
       // 所以只认真正的数字（0=未执行 是合法值，不能用真值判断）
@@ -1007,6 +1032,12 @@ const handleResetFlake = async () => {
 
 onMounted(async () => {
   projectId.value = (route.query.projectId as string) || ''
+  if (requirementFilterId.value) {
+    // 标题拉不到不影响筛选本身，静默降级成只显示 id
+    getRequirement(requirementFilterId.value)
+      .then((r) => { requirementFilterTitle.value = r.title })
+      .catch(() => { requirementFilterTitle.value = '' })
+  }
   await loadProjects()
   await Promise.all([load(), loadModules()])
 })

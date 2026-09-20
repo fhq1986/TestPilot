@@ -51,7 +51,7 @@ public record DefectListItemDto(
     Guid Id, Guid ProjectId, string ProjectName, string Title,
     DefectSeverity Severity, DefectStatus Status,
     string? AssignedToName, string? CreatedByName,
-    Guid? FoundInExecutionId, int? FoundInStepOrder, string? FoundInTestCaseName,
+    Guid? FoundInExecutionId, int? FoundInStepOrder, Guid? FoundInTestCaseId, string? FoundInTestCaseName,
     string? ExternalRef,
     DateTime CreatedAt, DateTime? FixedAt, DateTime? VerifiedAt);
 

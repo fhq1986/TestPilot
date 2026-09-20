@@ -25,6 +25,8 @@ public static class TestCaseApiExtensions
             [FromQuery] CaseReviewStatus? reviewStatus = null,
             [FromQuery] string? search = null,
             [FromQuery] string? module = null,
+            // 按关联需求筛选：需求覆盖页点「关联用例」数字跳过来时带上
+            [FromQuery] Guid? requirementId = null,
             // 仅看被标记为不稳定的用例（flake 隔离视图）
             [FromQuery] bool? flakyOnly = null,
             // 按「最近执行结果」筛选。口径与列表那一列**必须同源**
@@ -43,6 +45,8 @@ public static class TestCaseApiExtensions
                                          (t.CaseCode != null && t.CaseCode.Contains(search)));
             if (!string.IsNullOrWhiteSpace(module))
                 query = query.Where(t => t.Module == module);
+            if (requirementId.HasValue)
+                query = query.Where(t => t.RequirementId == requirementId.Value);
             if (execState.HasValue && !Enum.IsDefined(execState.Value))
                 // 别指望绑定层拦住：Enum.TryParse 会**接受** "99" 这种未定义数值，
                 // 于是筛选落到空状态集合、静默返回 0 条 —— 比报错难查得多

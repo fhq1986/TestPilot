@@ -42,6 +42,7 @@ export interface DefectListItem {
   createdByName?: string | null
   foundInExecutionId?: string | null
   foundInStepOrder?: number | null
+  foundInTestCaseId?: string | null
   foundInTestCaseName?: string | null
   externalRef?: string | null
   createdAt: string

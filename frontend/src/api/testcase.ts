@@ -7,6 +7,8 @@ export const getTestCases = (params: {
   projectId?: string
   search?: string
   module?: string
+  /** 仅看关联到该需求的用例（需求覆盖页点「关联用例」数字跳转时带上） */
+  requirementId?: string
   /** 仅看不稳定（flaky）用例 */
   flakyOnly?: boolean
   /** 按「最近一次执行结果」筛选（见 types/testcase.ts 的 CaseExecFilter，传数字） */

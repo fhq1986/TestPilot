@@ -61,7 +61,7 @@ public class DefectService
                 d.Severity, d.Status,
                 d.AssignedTo != null ? (d.AssignedTo.DisplayName != null && d.AssignedTo.DisplayName != "" ? d.AssignedTo.DisplayName : d.AssignedTo.Username) : null,
                 d.CreatedBy != null ? (d.CreatedBy.DisplayName != null && d.CreatedBy.DisplayName != "" ? d.CreatedBy.DisplayName : d.CreatedBy.Username) : null,
-                d.FoundInExecutionId, d.FoundInStepOrder,
+                d.FoundInExecutionId, d.FoundInStepOrder, d.FoundInTestCaseId,
                 d.FoundInTestCase != null ? d.FoundInTestCase.Name : null,
                 d.ExternalRef,
                 d.CreatedAt, d.FixedAt, d.VerifiedAt))

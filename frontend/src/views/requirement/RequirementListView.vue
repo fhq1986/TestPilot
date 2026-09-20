@@ -80,9 +80,15 @@
           </el-table-column>
           <el-table-column label="关联用例" width="100" align="center">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.caseCount > 0 ? 'success' : 'danger'" effect="plain">
-                {{ row.caseCount }}
-              </el-tag>
+              <!-- 有挂用例时数字可点：直接跳用例列表并按该需求过滤。
+                   .stop 防止同时触发整行勾选 -->
+              <el-tooltip v-if="row.caseCount > 0" content="点击查看关联用例" placement="top">
+                <el-tag size="small" type="success" effect="plain" class="clickable-tag"
+                  @click.stop="goRequirementCases(row)">
+                  {{ row.caseCount }}
+                </el-tag>
+              </el-tooltip>
+              <el-tag v-else size="small" type="danger" effect="plain">{{ row.caseCount }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="最近验证通过" width="110" align="center">
@@ -124,9 +130,13 @@
 
         <template #badge="{ item }">
           <el-tag v-if="item.priority" size="small">{{ item.priority }}</el-tag>
-          <el-tag size="small" :type="item.caseCount > 0 ? 'success' : 'danger'" effect="plain">
-            关联 {{ item.caseCount }}
-          </el-tag>
+          <el-tooltip v-if="item.caseCount > 0" content="点击查看关联用例" placement="top">
+            <el-tag size="small" type="success" effect="plain" class="clickable-tag"
+              @click="goRequirementCases(item)">
+              关联 {{ item.caseCount }}
+            </el-tag>
+          </el-tooltip>
+          <el-tag v-else size="small" type="danger" effect="plain">关联 {{ item.caseCount }}</el-tag>
         </template>
 
         <template #meta="{ item }">
@@ -188,6 +198,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, toRefs } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProjects } from '@/api/project'
@@ -211,6 +222,7 @@ import { useRowSelection } from '@/composables/useRowSelection'
 const { isMobile } = useBreakpoint()
 
 const authStore = useAuthStore()
+const router = useRouter()
 
 const projects = ref<Project[]>([])
 const coverage = ref<Awaited<ReturnType<typeof getRequirementCoverage>> | null>(null)
@@ -218,6 +230,11 @@ const coverage = ref<Awaited<ReturnType<typeof getRequirementCoverage>> | null>(
 const filters = ref<{ projectId?: string; search?: string }>({})
 
 const projectName = (projectId: string) => projects.value.find((p) => p.id === projectId)?.name ?? '—'
+
+/** 点「关联用例」数字：跳用例列表，带需求 id（列表页会显示可清除的筛选标识）+ 项目 id */
+const goRequirementCases = (row: RequirementListItem) => {
+  void router.push({ path: '/testcases', query: { requirementId: row.id, projectId: row.projectId } })
+}
 
 // 分页列表状态机（页码/页大小/总数/loading），见 composables/usePagedList.ts
 const list = usePagedList<RequirementListItem>((p, ps) => getRequirements({
@@ -380,6 +397,11 @@ onMounted(() => {
 
 .gap-tag {
   max-width: 100%;
+}
+
+/* 「关联用例」数字：有挂用例时可点，光标要给出可点的暗示 */
+.clickable-tag {
+  cursor: pointer;
 }
 
 .list-card {

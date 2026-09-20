@@ -97,7 +97,14 @@
             <template #default="{ row }">{{ row.createdByName || '—' }}</template>
           </el-table-column>
           <el-table-column label="来源用例" min-width="140" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.foundInTestCaseName || '—' }}</template>
+            <template #default="{ row }">
+              <!-- 有来源用例时可点进用例详情（.stop 防止同时触发行勾选） -->
+              <el-link v-if="row.foundInTestCaseId" type="primary" :underline="false"
+                @click.stop="goTestCase(row.foundInTestCaseId)">
+                {{ row.foundInTestCaseName || '查看用例' }}
+              </el-link>
+              <span v-else>{{ row.foundInTestCaseName || '—' }}</span>
+            </template>
           </el-table-column>
           <el-table-column label="创建时间" width="160">
             <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
@@ -144,7 +151,14 @@
           <span><span class="mcl-label">项目</span>{{ item.projectName || '—' }}</span>
           <span><span class="mcl-label">负责人</span>{{ item.assignedToName || '—' }}</span>
           <span><span class="mcl-label">提交人</span>{{ item.createdByName || '—' }}</span>
-          <span><span class="mcl-label">来源用例</span>{{ item.foundInTestCaseName || '—' }}</span>
+          <span>
+            <span class="mcl-label">来源用例</span>
+            <el-link v-if="item.foundInTestCaseId" type="primary" :underline="false"
+              @click="goTestCase(item.foundInTestCaseId)">
+              {{ item.foundInTestCaseName || '查看用例' }}
+            </el-link>
+            <template v-else>{{ item.foundInTestCaseName || '—' }}</template>
+          </span>
           <span><span class="mcl-label">创建</span>{{ formatDateTime(item.createdAt) }}</span>
           <span v-if="item.verifiedAt"><span class="mcl-label">闭环</span>{{ formatDateTime(item.verifiedAt) }}</span>
         </template>
@@ -646,6 +660,11 @@ const handleUnlinkCase = async (testCaseId: string) => {
 const goExecution = (executionId: string) => {
   detailVisible.value = false
   void router.push(`/executions/${executionId}`)
+}
+
+/** 跳到用例详情（「来源用例」列/卡片） */
+const goTestCase = (testCaseId: string) => {
+  void router.push(`/testcases/${testCaseId}`)
 }
 
 // ------------------------------ 展示辅助
