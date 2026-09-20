@@ -80,7 +80,7 @@
 ### 前置条件
 
 - **Windows + Git Bash**（或 Linux/macOS）
-- **.NET SDK 8+**（构建与运行；开发环境以 SDK 9.0.310 验证）
+- **.NET SDK 8**（构建与运行）
 - **Node.js 18+**、**Python 3.11+**
 - **WSL2 + Docker Engine**（或本机 Docker Desktop）
 
