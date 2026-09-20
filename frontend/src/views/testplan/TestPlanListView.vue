@@ -197,7 +197,7 @@
           <el-col :span="12">
             <el-form-item label="负责人">
               <el-select v-model="form.ownerId" placeholder="默认当前用户" clearable class="w-full">
-                <el-option v-for="u in users" :key="u.id" :label="`${u.displayName}（${u.username}）`" :value="u.id" />
+                <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -290,14 +290,14 @@ import {
 } from '@/api/testPlan'
 import { getProjects } from '@/api/project'
 import { getEnvironments } from '@/api/environment'
-import { listUsersApi } from '@/api/auth'
+import { listUserOptionsApi } from '@/api/auth'
 import { useBatchDelete } from '@/composables/useBatchDelete'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { usePagedList } from '@/composables/usePagedList'
 import { TestPlanStatus, TEST_PLAN_STATUS_LABELS as STATUS_LABELS, type TestPlanSummary } from '@/types/testPlan'
 import type { Project } from '@/types/project'
 import type { EnvironmentView } from '@/types/environment'
-import type { UserView } from '@/types/auth'
+import type { UserOption } from '@/types/auth'
 import MobileCardList from '@/components/common/MobileCardList.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 
@@ -332,7 +332,7 @@ const projectLoading = ref(false)
 /** 表单里的环境下拉：随所选项目变化，与筛选区的项目无关 */
 const envOptions = ref<EnvironmentView[]>([])
 const envLoading = ref(false)
-const users = ref<UserView[]>([])
+const users = ref<UserOption[]>([])
 const releases = ref<string[]>([])
 const statusCounts = ref<Record<string, number>>({})
 const saving = ref(false)
@@ -390,10 +390,10 @@ async function loadOptions() {
   projects.value = res.items
   // 刻意**不**自动选中第一个项目：原来那样会让列表只显示某一个项目的计划，
   // 而跨项目验收时用户根本不知道自己被"过滤"了（第一个项目没计划时页面还会空白）。
-  // 负责人下拉需要用户列表，但那要求 ManageUsers 权限——普通测试工程师拿不到
+  // 负责人下拉需要用户选项，走 /users/options（只要 ManageProjects，不要求 ManageUsers）——
+  // 否则普通测试工程师/管理员打开页面会因缺「管理用户」权限被全局弹错
   try {
-    const page = await listUsersApi({ page: 1, pageSize: 100 })
-    users.value = page.items
+    users.value = await listUserOptionsApi()
   } catch {
     users.value = []
   }
