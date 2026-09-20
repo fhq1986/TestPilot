@@ -57,28 +57,6 @@
 | 🔗 CI/CD Webhook | 标准 REST 端点 + `wait=true` 阻塞等待 + 结果作构建判据 |
 | 🐳 容器化一键部署 | Docker Compose 全栈拉起，无插件、无客户端安装 |
 
-## 📸 界面预览
-
-> 全部截图来自真实运行中的平台（含真实用例、执行记录与轮次数据）。
-
-| 界面预览 | 界面预览 |
-| ![仪表盘](docs/assets/screenshots/dashboard.png) | ![项目管理](docs/assets/screenshots/projects.png) |
-| **仪表盘** · 质量趋势 / 达标态势 / 定时任务健康 | **项目管理** · 多项目隔离与环境配置 |
-| ![测试用例](docs/assets/screenshots/testcases.png) | ![执行记录](docs/assets/screenshots/executions.png) |
-| **测试用例** · 优先级 / AI 生成标记 / 不稳定用例 | **执行记录** · 状态 / 触发方式 / AI 诊断入口 |
-| ![执行详情](docs/assets/screenshots/execution-detail.png) | ![测试计划](docs/assets/screenshots/test-plans.png) |
-| **执行详情** · 步骤流 / trace 回放 / AI 根因分析 | **测试计划** · 版本标识 / 目标通过率 / 多轮执行 |
-| ![计划详情](docs/assets/screenshots/plan-detail.png) | ![数据集](docs/assets/screenshots/datasets.png) |
-| **计划详情** · 达标判定 / 轮次 / 验收报告 | **数据集** · 数据驱动参数化（`{{变量}}`） |
-| ![视觉基线](docs/assets/screenshots/visual-baselines.png) | ![脚本录制](docs/assets/screenshots/recorder.png) |
-| **视觉基线** · 按「用例 + 步骤」保存基线截图 | **脚本录制** · 操作实时转 Playwright 步骤 |
-| ![缺陷管理](docs/assets/screenshots/defects.png) | ![需求覆盖](docs/assets/screenshots/requirements.png) |
-| **缺陷管理** · 失败步骤一键转缺陷 / 外部系统推送 | **需求覆盖** · 覆盖率与未覆盖需求追踪 |
-| ![测试套件](docs/assets/screenshots/suites.png) | ![定时任务](docs/assets/screenshots/schedules.png) |
-| **测试套件** · 用例归集 / 失败策略 / 一键运行 | **定时任务** · Cron 调度 + 执行范围编排 |
-| ![执行节点](docs/assets/screenshots/nodes.png) |  |
-| **执行节点** · 分布式 Worker 在线状态与并发负载 |  |
-
 ## 🧰 技术栈
 
 ```
@@ -149,6 +127,28 @@ docker compose up -d --build
 | backend API | 8002 |
 | aiworker | 8001 |
 | postgres（仅回环） | 5432 |
+
+## 📸 界面预览
+
+> 全部截图来自真实运行中的平台（含真实用例、执行记录与轮次数据）。
+
+| 界面预览 | 界面预览 |
+| ![仪表盘](docs/assets/screenshots/dashboard.png) | ![项目管理](docs/assets/screenshots/projects.png) |
+| **仪表盘** · 质量趋势 / 达标态势 / 定时任务健康 | **项目管理** · 多项目隔离与环境配置 |
+| ![测试用例](docs/assets/screenshots/testcases.png) | ![执行记录](docs/assets/screenshots/executions.png) |
+| **测试用例** · 优先级 / AI 生成标记 / 不稳定用例 | **执行记录** · 状态 / 触发方式 / AI 诊断入口 |
+| ![执行详情](docs/assets/screenshots/execution-detail.png) | ![测试计划](docs/assets/screenshots/test-plans.png) |
+| **执行详情** · 步骤流 / trace 回放 / AI 根因分析 | **测试计划** · 版本标识 / 目标通过率 / 多轮执行 |
+| ![计划详情](docs/assets/screenshots/plan-detail.png) | ![数据集](docs/assets/screenshots/datasets.png) |
+| **计划详情** · 达标判定 / 轮次 / 验收报告 | **数据集** · 数据驱动参数化（`{{变量}}`） |
+| ![视觉基线](docs/assets/screenshots/visual-baselines.png) | ![脚本录制](docs/assets/screenshots/recorder.png) |
+| **视觉基线** · 按「用例 + 步骤」保存基线截图 | **脚本录制** · 操作实时转 Playwright 步骤 |
+| ![缺陷管理](docs/assets/screenshots/defects.png) | ![需求覆盖](docs/assets/screenshots/requirements.png) |
+| **缺陷管理** · 失败步骤一键转缺陷 / 外部系统推送 | **需求覆盖** · 覆盖率与未覆盖需求追踪 |
+| ![测试套件](docs/assets/screenshots/suites.png) | ![定时任务](docs/assets/screenshots/schedules.png) |
+| **测试套件** · 用例归集 / 失败策略 / 一键运行 | **定时任务** · Cron 调度 + 执行范围编排 |
+| ![执行节点](docs/assets/screenshots/nodes.png) |  |
+| **执行节点** · 分布式 Worker 在线状态与并发负载 |  |
 
 ### 三条铁律别踩
 
