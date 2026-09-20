@@ -6,7 +6,7 @@
       <span v-else>AI 测试平台</span>
     </div>
 
-    <!-- 菜单已经 20 项，靠滚动找太慢。收起态放不下输入框，改成一个图标按钮：
+    <!-- 菜单已经 21 项，靠滚动找太慢。收起态放不下输入框，改成一个图标按钮：
          点它先展开侧栏、再把焦点送进输入框，少一步操作 -->
     <div v-if="!collapsed" class="app-sidebar-search">
       <el-input ref="searchInput" v-model="keyword" placeholder="搜索菜单" clearable
@@ -21,12 +21,27 @@
 
     <el-menu class="app-sidebar-menu" :collapse="collapsed" :default-active="activeMenu" router>
       <el-menu-item v-for="item in filteredMenus" :key="item.path" :index="item.path">
-        <el-icon>
+        <!-- 折叠态下 Element Plus 会把 #title 的内容搬进悬停 tooltip，菜单项里只剩图标，
+             角标必须挂到图标上才看得见（展开态挂在标题右侧，见下面的 #title） -->
+        <el-badge v-if="collapsed && item.path === NOTIFICATION_PATH" :value="unreadTotal" :max="99"
+          :hidden="unreadTotal === 0">
+          <el-icon>
+            <component :is="item.icon" />
+          </el-icon>
+        </el-badge>
+        <el-icon v-else>
           <component :is="item.icon" />
         </el-icon>
         <!-- 菜单标题必须放在 #title 插槽里：折叠态下 Element Plus 靠它把文字藏起来、
              并在悬停时用 tooltip 浮出。用裸 <span> 的话折叠后标题既不隐藏也不提示 -->
-        <template #title>{{ item.title }}</template>
+        <template #title>
+          <span class="menu-title" :class="{ 'has-badge': item.path === NOTIFICATION_PATH }">
+            {{ item.title }}
+            <span v-if="item.path === NOTIFICATION_PATH && unreadTotal > 0" class="menu-badge">
+              {{ unreadTotal > 99 ? '99+' : unreadTotal }}
+            </span>
+          </span>
+        </template>
       </el-menu-item>
     </el-menu>
 
@@ -50,9 +65,10 @@ import type { InputInstance } from 'element-plus'
 import {
   DataBoard, Folder, Document, VideoPlay, Timer, Collection, Grid, Picture,
   MagicStick, ChatDotRound, Connection, Setting, User, Lock, Memo, Calendar, WarningFilled,
-  Flag, Monitor, Expand, Fold, Search,
+  Flag, Monitor, Expand, Fold, Search, Bell,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notification'
 import { Permission } from '@/constants/permissions'
 import { useSidebarCollapse } from '@/composables/useSidebarCollapse'
 
@@ -96,6 +112,8 @@ interface MenuItem {
  */
 const menus: MenuItem[] = [
   { path: '/dashboard', title: '仪表盘', icon: DataBoard, permission: 0 },
+  // 消息中心紧跟仪表盘：两者都是「进来先看一眼」的入口，不挂权限（看的是自己的消息）
+  { path: '/notifications', title: '消息中心', icon: Bell, permission: 0 },
   { path: '/projects', title: '项目管理', icon: Folder, permission: Permission.ViewProjects },
   { path: '/testcases', title: '测试用例', icon: Document, permission: Permission.ViewTestCases },
   { path: '/executions', title: '执行记录', icon: VideoPlay, permission: Permission.ViewExecutions },
@@ -119,6 +137,11 @@ const menus: MenuItem[] = [
 
 const route = useRoute()
 const auth = useAuthStore()
+const notificationStore = useNotificationStore()
+
+/** 未读角标只挂在消息中心这一项上 */
+const NOTIFICATION_PATH = '/notifications'
+const unreadTotal = computed(() => notificationStore.unreadTotal)
 
 const visibleMenus = computed(() => menus.filter((item) => auth.can(item.permission)))
 
@@ -270,7 +293,7 @@ const activeMenu = computed(() => {
   outline-offset: -2px;
 }
 
-/* 菜单占满剩余高度并自己滚动：菜单项在增加（现在已经 19 个），
+/* 菜单占满剩余高度并自己滚动：菜单项在增加（现在已经 20 个），
    小屏上如果整体撑开，底部的收起按钮会被挤出可视区 */
 /* 配色与尺寸统一走 Element Plus 的菜单变量，而不是组件的 props：
    props 会把值当成**内联自定义属性**写到根节点上，内联优先级高于样式表，
@@ -331,6 +354,29 @@ const activeMenu = computed(() => {
 /* 选中项底色比悬停再重一档，一眼能分清"鼠标在这"和"当前在这" */
 .app-sidebar-menu :deep(.el-menu-item.is-active) {
   background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ------------------------------------------------------------------ 未读角标 */
+
+/* 只有带角标的标题才撑满剩余宽度，其余菜单项的标题保持原样不动 */
+.menu-title.has-badge {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 深色底上不能用 el-badge 默认的纯白字红底——那套是给浅色背景调的。
+   这里用 danger 实心 + 白字，与顶栏铃铛的角标保持同一视觉 */
+.menu-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  background-color: var(--el-color-danger);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 /* 折叠态：Element Plus 是**靠左内边距**把图标摆到正中的

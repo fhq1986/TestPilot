@@ -1,5 +1,5 @@
 <template>
-  <el-popover v-model:visible="visible" placement="bottom-end" :width="380" trigger="click"
+  <el-popover v-model:visible="visible" placement="bottom-end" :width="400" trigger="click"
     popper-class="notification-popper" @show="onShow">
     <template #reference>
       <button type="button" class="bell" :title="bellTitle" :aria-label="bellTitle">
@@ -13,37 +13,46 @@
 
     <div class="nc">
       <div class="nc-head">
-        <span class="nc-title">消息</span>
-        <div class="nc-head-actions">
-          <el-button v-if="store.unreadTotal > 0" link type="primary" size="small" @click="handleReadAll">
-            全部已读
-          </el-button>
-          <el-button link type="primary" size="small" @click="goAll">查看全部</el-button>
-        </div>
+        <span class="nc-title">
+          消息
+          <span v-if="store.unreadTotal > 0" class="nc-unread">{{ store.unreadTotal }} 条未读</span>
+        </span>
+        <el-button v-if="store.unreadTotal > 0" link type="primary" size="small" @click="handleReadAll">
+          全部已读
+        </el-button>
       </div>
 
       <el-radio-group v-model="filter" size="small" class="nc-filter" @change="onShow">
         <el-radio-button :value="false">全部</el-radio-button>
-        <el-radio-button :value="true">未读{{ store.unreadTotal > 0 ? `（${store.unreadTotal}）` : '' }}</el-radio-button>
+        <el-radio-button :value="true">未读</el-radio-button>
       </el-radio-group>
 
       <div v-loading="store.loadingRecent" class="nc-list">
-        <div v-for="item in store.recent" :key="item.id" class="nc-item" :class="{ unread: !item.isRead }"
+        <div v-for="item in store.recent" :key="item.id" class="nc-item" :class="{ 'is-unread': !item.isRead }"
           @click="open(item)">
-          <el-icon class="nc-icon" :class="`level-${item.level}`">
-            <component :is="iconOf(item.level)" />
-          </el-icon>
+          <span class="nc-flag" />
+          <div class="nc-icon" :class="`level-${item.level}`">
+            <el-icon>
+              <component :is="categoryIcon(item.category)" />
+            </el-icon>
+          </div>
           <div class="nc-body">
             <div class="nc-item-title">{{ item.title }}</div>
             <div v-if="item.body" class="nc-item-text">{{ item.body }}</div>
             <div class="nc-item-meta">
-              <el-tag size="small" effect="plain" type="info">{{ categoryLabel(item.category) }}</el-tag>
-              <span>{{ formatDateTime(item.createdAt) }}</span>
+              <span>{{ categoryLabel(item.category) }}</span>
+              <span class="nc-sep">·</span>
+              <span>{{ formatRelativeTime(item.createdAt) }}</span>
             </div>
           </div>
         </div>
-        <el-empty v-if="!store.loadingRecent && store.recent.length === 0" :image-size="50"
-          description="暂无消息" />
+
+        <el-empty v-if="!store.loadingRecent && store.recent.length === 0" :image-size="56"
+          :description="filter ? '没有未读消息' : '暂无消息'" />
+      </div>
+
+      <div class="nc-foot">
+        <el-button link type="primary" @click="goAll">查看全部消息</el-button>
       </div>
     </div>
   </el-popover>
@@ -53,12 +62,10 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {
-  Bell, CircleCheck, CircleClose, InfoFilled, WarningFilled,
-} from '@element-plus/icons-vue'
+import { Bell } from '@element-plus/icons-vue'
 import { useNotificationStore } from '@/stores/notification'
-import { formatDateTime } from '@/utils/formatter'
-import { NOTIFICATION_CATEGORY_LABELS, NotificationLevel, type NotificationItem } from '@/types/notification'
+import { formatRelativeTime } from '@/utils/formatter'
+import { categoryIcon, categoryLabel, type NotificationItem } from '@/types/notification'
 
 const router = useRouter()
 const store = useNotificationStore()
@@ -68,18 +75,6 @@ const filter = ref(false)
 
 const bellTitle = computed(() =>
   store.unreadTotal > 0 ? `${store.unreadTotal} 条未读消息` : '消息')
-
-const categoryLabel = (category: number) => NOTIFICATION_CATEGORY_LABELS[category] ?? '消息'
-
-/** 级别 → 图标：颜色交给 CSS 的 level-* 类，图标只表达语义 */
-const iconOf = (level: number) => {
-  switch (level) {
-    case NotificationLevel.Success: return CircleCheck
-    case NotificationLevel.Warning: return WarningFilled
-    case NotificationLevel.Error: return CircleClose
-    default: return InfoFilled
-  }
-}
 
 const onShow = () => { void store.refreshRecent(filter.value) }
 
@@ -95,6 +90,7 @@ const open = async (item: NotificationItem) => {
 const handleReadAll = async () => {
   await store.markAllRead()
   ElMessage.success('已全部标记为已读')
+  void store.refreshRecent(filter.value)
 }
 
 const goAll = () => {
@@ -138,32 +134,37 @@ const goAll = () => {
 }
 
 .nc-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
 }
 
-.nc-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.nc-unread {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-color-danger);
 }
 
 .nc-filter {
-  margin: 8px 0;
+  margin: 10px 0 8px;
 }
 
 /* 固定高度 + 内部滚动：消息条数不定，弹层不能跟着无限变高 */
 .nc-list {
-  max-height: 380px;
+  max-height: 400px;
   overflow-y: auto;
-  margin: 0 -4px;
+  margin: 0 -6px;
 }
 
 .nc-item {
+  position: relative;
   display: flex;
+  align-items: flex-start;
   gap: 10px;
-  padding: 10px 8px;
-  border-radius: 6px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.18s ease;
 }
@@ -172,20 +173,38 @@ const goAll = () => {
   background-color: var(--el-fill-color-light);
 }
 
-.nc-item.unread {
-  background-color: var(--el-color-primary-light-9);
+/* 未读色条：与消息中心页同一套语言，跨页面认得出是同一件事 */
+.nc-flag {
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background-color: transparent;
+}
+
+.nc-item.is-unread .nc-flag {
+  background-color: var(--el-color-danger);
 }
 
 .nc-icon {
   flex-shrink: 0;
-  margin-top: 2px;
-  font-size: 16px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 15px;
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
 }
 
 .nc-icon.level-0 { color: var(--el-text-color-secondary); }
-.nc-icon.level-1 { color: var(--el-color-success); }
-.nc-icon.level-2 { color: var(--el-color-warning); }
-.nc-icon.level-3 { color: var(--el-color-danger); }
+.nc-icon.level-1 { color: var(--el-color-success); background-color: var(--el-color-success-light-9); }
+.nc-icon.level-2 { color: var(--el-color-warning); background-color: var(--el-color-warning-light-9); }
+.nc-icon.level-3 { color: var(--el-color-danger); background-color: var(--el-color-danger-light-9); }
 
 .nc-body {
   min-width: 0;
@@ -195,27 +214,47 @@ const goAll = () => {
 .nc-item-title {
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.5;
   color: var(--el-text-color-primary);
   word-break: break-word;
+}
+
+/* 已读的标题弱一档，未读自然浮出来 */
+.nc-item:not(.is-unread) .nc-item-title {
+  font-weight: 400;
+  color: var(--el-text-color-regular);
 }
 
 .nc-item-text {
   margin-top: 2px;
   font-size: 12px;
-  color: var(--el-text-color-regular);
-  /* 正文最多两行：一条消息占太高的位置会让列表失去"扫一眼"的价值 */
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+  /* 正文最多两行：弹层里一条占太高会挤掉后面几条 */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-word;
 }
 
 .nc-item-meta {
   margin-top: 6px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-placeholder);
+}
+
+.nc-sep {
+  color: var(--el-border-color);
+}
+
+.nc-foot {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  text-align: center;
 }
 </style>
