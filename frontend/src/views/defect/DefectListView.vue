@@ -369,7 +369,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, toRefs } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProjects } from '@/api/project'
@@ -402,6 +402,7 @@ import { useBatchDelete } from '@/composables/useBatchDelete'
 import { useRowSelection } from '@/composables/useRowSelection'
 
 const router = useRouter()
+const route = useRoute()
 
 /** 窄屏（< 1024px）：表格换成卡片形态，见下方模板 */
 const { isMobile } = useBreakpoint()
@@ -771,6 +772,14 @@ onMounted(() => {
   reload()
   void loadStats()
   void loadExternalProviders()
+
+  // 从站内消息等外部入口跳过来时带 openDefect={id}：直接把详情抽屉开好，
+  // 不必让用户在一页 20 条里自己找。列表不带筛选条件（缺陷没有独立详情路由）。
+  // 缺陷可能已被删除（消息是历史记录），拉不到就静默停在列表页。
+  const openId = route.query.openDefect
+  if (typeof openId === 'string' && openId) {
+    openDetail(openId).catch(() => ElMessage.warning('该缺陷已不存在，可能已被删除'))
+  }
 })
 
 // ------------------------------ 外部缺陷系统（配置开关驱动，未启用时数组为空、区块不渲染）

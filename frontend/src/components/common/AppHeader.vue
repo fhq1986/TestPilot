@@ -30,25 +30,28 @@
       </nav>
     </div>
 
-    <el-dropdown @command="handleCommand">
-      <span class="app-header-user">
-        <!-- 狭窄的头部放不下角色标签，手机上先省掉它：角色在个人中心仍可查 -->
-        <el-tag v-if="authStore.roleName && !isNarrow" :type="roleTagType" size="small" effect="light"
-          class="role-tag">
-          {{ authStore.roleName }}
-        </el-tag>
-        <span class="user-name">{{ displayName }}</span>
-        <el-icon>
-          <ArrowDown />
-        </el-icon>
-      </span>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-          <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+    <div class="app-header-right">
+      <NotificationCenter />
+      <el-dropdown @command="handleCommand">
+        <span class="app-header-user">
+          <!-- 狭窄的头部放不下角色标签，手机上先省掉它：角色在个人中心仍可查 -->
+          <el-tag v-if="authStore.roleName && !isNarrow" :type="roleTagType" size="small" effect="light"
+            class="role-tag">
+            {{ authStore.roleName }}
+          </el-tag>
+          <span class="user-name">{{ displayName }}</span>
+          <el-icon>
+            <ArrowDown />
+          </el-icon>
+        </span>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+            <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
   </div>
 </template>
 
@@ -57,6 +60,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Menu } from '@element-plus/icons-vue'
+import NotificationCenter from '@/components/common/NotificationCenter.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useMobileNav } from '@/composables/useMobileNav'
@@ -187,6 +191,13 @@ const handleCommand = (command: string) => {
   color: var(--el-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .app-header-user {

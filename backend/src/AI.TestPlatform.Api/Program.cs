@@ -22,6 +22,7 @@ using AI.TestPlatform.Api.Modules.DataSets;
 using AI.TestPlatform.Api.Modules.Requirements;
 using AI.TestPlatform.Api.Modules.Defects;
 using AI.TestPlatform.Api.Modules.Nodes;
+using AI.TestPlatform.Api.Modules.Notifications;
 using AI.TestPlatform.Api.Modules.Environments;
 using AI.TestPlatform.Api.Modules.Executions;
 using AI.TestPlatform.Api.Modules.Mocks;
@@ -343,6 +344,8 @@ builder.Services.AddScoped<ReportAggregator>();
 // 迭代 A：flake 识别 + 通知推送
 builder.Services.AddScoped<FlakeDetectionService>();
 builder.Services.AddScoped<NotificationService>();
+// 站内消息（消息中心）：与上面的对外推送分工不同，见 InAppNotificationService 的注释
+builder.Services.AddScoped<InAppNotificationService>();
 
 var app = builder.Build();
 
@@ -462,6 +465,7 @@ app.MapGroup("/api/projects").MapProjectApi().RequireAuthorization();
 app.MapGroup("/api/projects").MapProjectApiTokenApi().RequireAuthorization();
 app.MapGroup("/api/projects").MapCustomFieldApi().RequireAuthorization();
 app.MapGroup("/api/comments").MapCommentApi();
+app.MapGroup("/api/notifications").MapNotificationApi();
 app.MapGroup("/api/defects").MapDefectApi().RequireAuthorization();
 app.MapGroup("/api/requirements").MapRequirementApi().RequireAuthorization();
 // 富文本图片上传（/api/artifacts/image）：需求说明、缺陷描述里插入图片用
@@ -489,6 +493,8 @@ app.MapGroup("/api/environments").MapEnvironmentApi().RequireAuthorization();
 // Webhook 独立 token 保护（X-Webhook-Token），不加 RequireAuthorization
 app.MapGroup("/api/webhooks").MapWebhookApi();
 app.MapHub<ExecutionHub>("/hubs/execution").RequireAuthorization();
+// 站内消息 Hub：按用户分组推送，与执行 Hub 的分组语义不同，刻意分开（见 NotificationHub 注释）
+app.MapHub<NotificationHub>("/hubs/notification").RequireAuthorization();
 
 // 启动时自动迁移 + 种子数据（开发/测试环境；生产环境改为显式迁移）
 using (var scope = app.Services.CreateScope())

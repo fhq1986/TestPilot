@@ -60,6 +60,9 @@ public class TestDbContext : DbContext
     // 通用评论（用例/缺陷/计划）
     public DbSet<Comment> Comments => Set<Comment>();
 
+    // 站内消息（消息中心）
+    public DbSet<InAppNotification> InAppNotifications => Set<InAppNotification>();
+
     public DbSet<TestPlan> TestPlans => Set<TestPlan>();
     public DbSet<TestPlanItem> TestPlanItems => Set<TestPlanItem>();
     public DbSet<TestPlanRound> TestPlanRounds => Set<TestPlanRound>();
@@ -126,6 +129,22 @@ public class TestDbContext : DbContext
             entity.HasIndex(l => l.CreatedAt);
             entity.HasIndex(l => new { l.ResourceType, l.ResourceId });
             entity.HasIndex(l => new { l.Username, l.CreatedAt });
+        });
+
+        // 站内消息：查询永远是「我的消息，按时间倒序」和「我的未读数」两种，
+        // 索引就照这两条查询建，不额外加用不上的组合
+        modelBuilder.Entity<InAppNotification>(entity =>
+        {
+            entity.Property(n => n.Title).HasMaxLength(200);
+            entity.Property(n => n.Body).HasMaxLength(1000);
+            entity.Property(n => n.LinkUrl).HasMaxLength(500);
+            entity.Property(n => n.LinkLabel).HasMaxLength(30);
+            entity.Property(n => n.SourceType).HasMaxLength(50);
+            entity.HasIndex(n => new { n.UserId, n.IsRead, n.CreatedAt });
+            entity.HasIndex(n => new { n.UserId, n.CreatedAt });
+            // 接收人删号后消息一并清掉：没有收件人的消息留着也投不出去
+            entity.HasOne(n => n.User).WithMany().HasForeignKey(n => n.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // 迭代 C：脚本录制会话。会话按创建时间倒序列表查询，且维护任务按状态筛选

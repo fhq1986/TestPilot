@@ -23,18 +23,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/common/AppSidebar.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import { SIDEBAR_WIDTH, useSidebarCollapse } from '@/composables/useSidebarCollapse'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useMobileNav } from '@/composables/useMobileNav'
+import { useNotificationStore } from '@/stores/notification'
 
 const { collapsed } = useSidebarCollapse()
 const { isNarrow } = useBreakpoint()
 const { drawerOpen, setDrawerOpen, closeNav } = useMobileNav()
 const route = useRoute()
+const notificationStore = useNotificationStore()
+
+/**
+ * 站内消息的全局连接挂在这里：MainLayout 是「已登录」的唯一外壳，
+ * 它一挂载就建立连接（覆盖登录后与刷新页面两种进入方式），
+ * 一卸载（跳去登录页 / 登出）就断开，不必在 auth store 里手工配对。
+ */
+onMounted(() => { void notificationStore.connect() })
+onBeforeUnmount(() => { notificationStore.disconnect() })
 
 const asideWidth = computed(() =>
   `${collapsed.value ? SIDEBAR_WIDTH.collapsed : SIDEBAR_WIDTH.expanded}px`,

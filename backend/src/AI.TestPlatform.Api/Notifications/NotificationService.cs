@@ -29,11 +29,13 @@ public class NotificationService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ReportShareLinkService _shareLinks;
     private readonly TestPlanReportService _planReports;
+    private readonly InAppNotificationService _inApp;
     private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(TestDbContext db, SettingsService settings,
         IHttpClientFactory httpClientFactory,
         ReportShareLinkService shareLinks, TestPlanReportService planReports,
+        InAppNotificationService inApp,
         ILogger<NotificationService> logger)
     {
         _db = db;
@@ -41,15 +43,13 @@ public class NotificationService
         _httpClientFactory = httpClientFactory;
         _shareLinks = shareLinks;
         _planReports = planReports;
+        _inApp = inApp;
         _logger = logger;
     }
 
-    /// <summary>执行结束后推送通知（失败只记日志）</summary>
+    /// <summary>执行结束后推送通知（站内消息 + 外部渠道，各自失败只记日志）</summary>
     public async Task NotifyExecutionFinishedAsync(Guid executionId, CancellationToken ct)
     {
-        var config = await _settings.GetAsync(ct);
-        if (!config.NotifyEnabled) return;
-
         var execution = await _db.Executions.AsNoTracking()
             .Include(e => e.TestCase)
             .Include(e => e.Results)
@@ -59,13 +59,82 @@ public class NotificationService
 
         // 属于测试计划轮次的执行**不逐条推**：一轮可能有几百条，逐条推会刷屏，
         // 由轮次结束时的一条汇总消息统一交代（见 NotifyPlanRoundFinishedAsync）。
+        // 站内消息同理，否则消息中心会被一轮执行刷满。
         if (execution.PlanRoundId is not null) return;
 
         var isProblem = execution.Status is ExecutionStatus.Failed or ExecutionStatus.Error;
+
+        // ① 站内消息：发给**发起这条执行的人**，且不受 NotifyEnabled 总开关约束——
+        // 总开关是防外部渠道打扰的闸门，而「我发起的那条跑挂了」是必须知道的记录。
+        // Canceled 不发：那是自己按的终止按钮。
+        if (execution.Status is not ExecutionStatus.Canceled)
+        {
+            await _inApp.PushAsync(execution.TriggeredById, new NotificationDraft(
+                NotificationCategory.Execution,
+                $"{(isProblem ? "执行失败" : "执行完成")}：{execution.TestCase?.Name ?? "(用例已删除)"}",
+                Level: isProblem ? NotificationLevel.Error : NotificationLevel.Success,
+                Body: BuildSummary(execution),
+                LinkUrl: $"/executions/{execution.Id}",
+                LinkLabel: "查看执行",
+                SourceType: "Execution",
+                SourceId: execution.Id), ct);
+
+            // 视觉差异单独一条：性质是「有事等你决定」，不是「跑完了」
+            await NotifyVisualChangesAsync(execution, ct);
+        }
+
+        // ② 外部渠道（受总开关与「仅失败时通知」约束）
+        var config = await _settings.GetAsync(ct);
+        if (!config.NotifyEnabled) return;
         if (config.NotifyOnFailureOnly && !isProblem) return;
 
         var message = BuildMessage(execution);
         await DispatchAsync(config, message, ct);
+    }
+
+    /// <summary>
+    /// 视觉基线变更待确认：截图与基线不一致时，得有人判定「这是回归还是预期改版」——
+    /// 没人确认它就一直悬着，基线也永远不会更新。
+    ///
+    /// 接收人优先给发起人；无人值守（定时触发，TriggeredById 为空）时落到项目测试负责人。
+    /// 单独一条消息而不是并进执行汇总：执行消息是"跑完了"，这条是"有事等你决定"，性质不同。
+    /// </summary>
+    private async Task NotifyVisualChangesAsync(
+        global::AI.TestPlatform.Domain.Entities.Execution execution, CancellationToken ct)
+    {
+        var changed = execution.Results.Count(r => r.VisualStatus == VisualStatus.Changed);
+        if (changed == 0) return;
+
+        var recipient = execution.TriggeredById;
+        if (recipient is null && execution.TestCase is { } testCase)
+        {
+            recipient = await _db.Projects.AsNoTracking()
+                .Where(p => p.Id == testCase.ProjectId)
+                .Select(p => p.TestOwnerId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        await _inApp.PushAsync(recipient, new NotificationDraft(
+            NotificationCategory.Visual,
+            $"视觉基线有 {changed} 处变化待确认：{execution.TestCase?.Name ?? "(用例已删除)"}",
+            Level: NotificationLevel.Warning,
+            Body: "请确认是回归缺陷还是预期改版；确认后新截图才会成为基线",
+            LinkUrl: $"/executions/{execution.Id}",
+            LinkLabel: "查看比对",
+            SourceType: "Execution",
+            SourceId: execution.Id), ct);
+    }
+
+    /// <summary>站内消息的一行摘要：消息中心里列表很窄，只放最能说明问题的三个数</summary>
+    private static string BuildSummary(global::AI.TestPlatform.Domain.Entities.Execution execution)
+    {
+        var total = execution.Results.Count;
+        var passed = execution.Results.Count(r => r.Status == ExecutionStatus.Passed);
+        var failed = execution.Results.Count(r =>
+            r.Status is ExecutionStatus.Failed or ExecutionStatus.Error);
+        var rate = total == 0 ? 0 : (int)Math.Round(passed * 100.0 / total);
+        var duration = execution.DurationMs is null ? "-" : $"{execution.DurationMs / 1000.0:F1}s";
+        return $"共 {total} 步 · 通过 {passed} / 失败 {failed} · 通过率 {rate}% · 耗时 {duration}";
     }
 
     /// <summary>向所有已启用渠道发送一条自定义消息（用于设置页「发送测试消息」）</summary>
@@ -96,9 +165,6 @@ public class NotificationService
     /// </summary>
     public async Task NotifyPlanRoundFinishedAsync(Guid planId, Guid roundId, CancellationToken ct)
     {
-        var config = await _settings.GetAsync(ct);
-        if (!config.NotifyEnabled) return;
-
         var plan = await _db.TestPlans.AsNoTracking()
             .Include(p => p.Owner)
             .FirstOrDefaultAsync(p => p.Id == planId, ct);
@@ -107,7 +173,32 @@ public class NotificationService
         var outcome = await ComputeOutcomeAsync(plan, roundId, ct);
         if (outcome is null) return;
 
-        // ① 定向验收邮件。
+        // ① 站内消息：给计划负责人 + 项目测试负责人。「一轮跑完」正是"回来看看结果"的
+        //    典型场景，也是站内消息最该存在的理由；不受 NotifyEnabled 约束。
+        var inAppRecipients = new List<Guid>();
+        if (plan.OwnerId is { } ownerId) inAppRecipients.Add(ownerId);
+        var projectTestOwnerId = await _db.Projects.AsNoTracking()
+            .Where(p => p.Id == plan.ProjectId)
+            .Select(p => p.TestOwnerId)
+            .FirstOrDefaultAsync(ct);
+        if (projectTestOwnerId is { } testOwnerId) inAppRecipients.Add(testOwnerId);
+
+        await _inApp.PushAsync(inAppRecipients, new NotificationDraft(
+            NotificationCategory.Plan,
+            $"{(outcome.Met ? "轮次达标" : "轮次未达标")}：{plan.Name} 第 {outcome.RoundNo} 轮",
+            Level: outcome.Met ? NotificationLevel.Success : NotificationLevel.Error,
+            Body: $"通过 {outcome.Passed} / 失败 {outcome.Failed} / 错误 {outcome.Error} / 跳过 {outcome.Skipped}"
+                  + $" · 通过率 {outcome.PassRate:P1}（目标 {plan.TargetPassRate:P1}）",
+            LinkUrl: $"/test-plans/{plan.Id}",
+            LinkLabel: "查看计划",
+            SourceType: "TestPlan",
+            SourceId: plan.Id), ct);
+
+        // ② 外部渠道（受总开关与「仅失败时通知」约束）
+        var config = await _settings.GetAsync(ct);
+        if (!config.NotifyEnabled) return;
+
+        // 定向验收邮件。
         // 刻意放在「仅失败时通知」判断**之前**：那道闸门是为了"别让报警刷屏"，
         // 而这封邮件是带附件的验收凭证，达标结果恰恰最需要留档发给项目经理与客户。
         // 它的开关是独立的（NotifyPlanResultEmail）+ 是否配了 SMTP / 收件人。
@@ -126,7 +217,7 @@ public class NotificationService
 
         var title = outcome.Met ? "测试计划轮次完成 · 达标" : "测试计划轮次完成 · 未达标";
 
-        // ② 机器人渠道汇总。达标 + 仅失败时通知 → 不打扰。
+        // ③ 机器人渠道汇总。达标 + 仅失败时通知 → 不打扰。
         if (config.NotifyOnFailureOnly && outcome.Met) return;
 
         var lines = $"""
@@ -706,9 +797,14 @@ public class NotificationService
     }
 
     /// <summary>
-    /// 评论 @提及提醒：给被提及（Username 或 DisplayName 匹配 @名字）、且配置了邮箱的用户发邮件。
-    /// 作者本人被 @ 不发（自己写的自己收到是噪声）。无 SMTP 配置 / 无匹配收件人时静默返回。
-    /// 由评论创建端点 fire-and-forget 调用：邮件失败只记日志，绝不影响评论本身。
+    /// 评论 @提及提醒：站内消息 + 邮件。
+    ///
+    /// **站内消息不依赖邮箱、也不依赖 SMTP 配置**——被 @ 的人一定有平台账号，
+    /// 而邮件只有配了 SMTP、且该用户填了邮箱才发得出去。改版前这里只发邮件，
+    /// 结果是「没配 SMTP 的部署里 @提及 完全静默」，站内消息正好补上这个缺口。
+    ///
+    /// 作者本人被 @ 不发（自己写的自己收到是噪声）。
+    /// 由评论创建端点 fire-and-forget 调用：失败只记日志，绝不影响评论本身。
     /// </summary>
     public async Task NotifyCommentMentionsAsync(Guid commentId, CancellationToken ct)
     {
@@ -724,26 +820,43 @@ public class NotificationService
                 .Select(m => m.Groups[1].Value).Distinct().ToList();
             if (mentioned.Count == 0) return;
 
-            var config = await _settings.GetAsync(ct);
-            if (string.IsNullOrWhiteSpace(config.SmtpHost)) return;
-
             var users = await _db.Users.AsNoTracking()
                 .Where(u => mentioned.Contains(u.Username) || mentioned.Contains(u.DisplayName))
                 .Select(u => new { u.Id, u.Username, u.DisplayName, u.Email })
                 .ToListAsync(ct);
-            var recipients = users
-                .Where(u => u.Id != comment.AuthorId && !string.IsNullOrWhiteSpace(u.Email))
-                .Select(u => u.Email!).Distinct().ToList();
-            if (recipients.Count == 0) return;
+            var targets = users.Where(u => u.Id != comment.AuthorId).ToList();
+            if (targets.Count == 0) return;
 
             var (targetLabel, targetTitle) = await ResolveCommentTargetAsync(comment.Target, comment.TargetId, ct);
             if (targetLabel is null) return;
 
-            var title = $"【AI 测试平台】{comment.Author.DisplayName} 在{targetLabel}「{targetTitle}」的评论中提到了你";
+            var authorName = comment.Author?.DisplayName ?? "同事";
+
+            // ① 站内消息（不要求邮箱）
+            await _inApp.PushAsync(targets.Select(u => u.Id), new NotificationDraft(
+                NotificationCategory.Comment,
+                $"{authorName} 在{targetLabel}「{targetTitle}」的评论中提到了你",
+                Level: NotificationLevel.Info,
+                Body: comment.Body,
+                LinkUrl: CommentTargetLink(comment.Target, comment.TargetId),
+                LinkLabel: "查看评论",
+                SourceType: comment.Target.ToString(),
+                SourceId: comment.TargetId), ct);
+
+            // ② 邮件（只有配了 SMTP 且用户填了邮箱才发）
+            var config = await _settings.GetAsync(ct);
+            if (string.IsNullOrWhiteSpace(config.SmtpHost)) return;
+
+            var recipients = targets
+                .Where(u => !string.IsNullOrWhiteSpace(u.Email))
+                .Select(u => u.Email!).Distinct().ToList();
+            if (recipients.Count == 0) return;
+
+            var title = $"【AI 测试平台】{authorName} 在{targetLabel}「{targetTitle}」的评论中提到了你";
             var message = new NotificationMessage(
                 Title: title,
-                Markdown: $"{comment.Author.DisplayName} 在{targetLabel}「**{targetTitle}**」的评论中提到了你：\n\n> {comment.Body}\n\n请登录 AI 测试平台查看完整讨论。",
-                Plain: $"{comment.Author.DisplayName} 在{targetLabel}「{targetTitle}」的评论中提到了你：{comment.Body}（请登录平台查看）");
+                Markdown: $"{authorName} 在{targetLabel}「**{targetTitle}**」的评论中提到了你：\n\n> {comment.Body}\n\n请登录 AI 测试平台查看完整讨论。",
+                Plain: $"{authorName} 在{targetLabel}「{targetTitle}」的评论中提到了你：{comment.Body}（请登录平台查看）");
 
             var result = await SendMailAsync(config, recipients, message, ct);
             _logger.LogInformation("评论 @提及提醒：{Mentioned} 人，发送给 {Recipients}，结果 {Ok} {Error}",
@@ -754,6 +867,15 @@ public class NotificationService
             _logger.LogWarning(ex, "评论 @提及提醒发送失败 评论 {CommentId}", commentId);
         }
     }
+
+    /// <summary>评论挂载对象的站内跳转地址（与前端路由对齐；缺陷列表用 query 直接开详情抽屉）</summary>
+    private static string CommentTargetLink(CommentTarget target, Guid targetId) => target switch
+    {
+        CommentTarget.TestCase => $"/testcases/{targetId}",
+        CommentTarget.Defect => $"/defects?openDefect={targetId}",
+        CommentTarget.TestPlan => $"/test-plans/{targetId}",
+        _ => "/dashboard",
+    };
 
     /// <summary>解析评论挂载对象的展示名（用例名/缺陷标题/计划名）。对象不存在返回 (null, null)。</summary>
     private async Task<(string? Label, string? Title)> ResolveCommentTargetAsync(

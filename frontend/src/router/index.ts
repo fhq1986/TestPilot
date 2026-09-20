@@ -202,6 +202,13 @@ const router = createRouter({
           meta: { title: '个人中心' },
         },
         {
+          // 消息中心：入口是顶栏铃铛，任何登录用户都能看自己的消息，不挂权限
+          path: 'notifications',
+          name: 'notifications',
+          component: () => import('@/views/notification/NotificationListView.vue'),
+          meta: { title: '消息中心' },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/settings/SettingsView.vue'),

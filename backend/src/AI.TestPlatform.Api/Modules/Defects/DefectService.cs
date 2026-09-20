@@ -1,7 +1,10 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Common;
+// 注意：必须显式 using，不能写成 Notifications.XXX——
+// 本文件在 Modules.Defects 命名空间下，裸写 Notifications 会先命中同级的 Modules.Notifications
+using AI.TestPlatform.Api.Notifications;
 using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
@@ -24,8 +27,13 @@ public class DefectService
     private const int MaxPageSize = 100;
 
     private readonly TestDbContext _db;
+    private readonly InAppNotificationService _notifications;
 
-    public DefectService(TestDbContext db) => _db = db;
+    public DefectService(TestDbContext db, InAppNotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     // ------------------------------ 查询
 
@@ -371,7 +379,57 @@ public class DefectService
 
         defect.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
+        await NotifyTransitionAsync(defect, request.Action!.ToLowerInvariant(), currentUserId, ct);
         return await GetAsync(id, ct);
+    }
+
+    /// <summary>
+    /// 状态流转的站内消息。收件人一律取「这件事接下来该谁动」：
+    /// 指派 → 新负责人；修复 / 关闭 / 重开 → 开发负责人；验证 / 驳回 / 挂起 → 提交人。
+    /// 操作人自己不收——自己点的按钮自己再收一条是噪声，与评论 @提及的取舍一致。
+    /// </summary>
+    private async Task NotifyTransitionAsync(Defect defect, string action, Guid? actorId, CancellationToken ct)
+    {
+        var recipient = action switch
+        {
+            "assign" or "fix" or "close" or "reopen" => defect.AssignedToId,
+            "verify" or "reject" or "defer" => defect.CreatedById,
+            _ => null,
+        };
+        if (recipient is null || recipient == actorId) return;
+
+        var (title, level) = action switch
+        {
+            "assign" => ($"缺陷已指派给你：{defect.Title}", NotificationLevel.Warning),
+            "fix" => ($"缺陷已修复，待验证：{defect.Title}", NotificationLevel.Info),
+            "verify" => ($"缺陷已通过验证：{defect.Title}", NotificationLevel.Success),
+            "close" => ($"缺陷已关闭：{defect.Title}", NotificationLevel.Success),
+            "reject" => ($"缺陷被驳回：{defect.Title}", NotificationLevel.Warning),
+            "defer" => ($"缺陷被挂起：{defect.Title}", NotificationLevel.Warning),
+            "reopen" => ($"缺陷被重新打开：{defect.Title}", NotificationLevel.Warning),
+            _ => (string.Empty, NotificationLevel.Info),
+        };
+        if (title.Length == 0) return;
+
+        var actor = await DisplayNameAsync(actorId, ct);
+        await _notifications.PushAsync(recipient, new NotificationDraft(
+            NotificationCategory.Defect,
+            title,
+            Level: level,
+            Body: actor is null ? null : $"操作人：{actor}",
+            LinkUrl: $"/defects?openDefect={defect.Id}",
+            LinkLabel: "查看缺陷",
+            SourceType: "Defect",
+            SourceId: defect.Id), ct);
+    }
+
+    private async Task<string?> DisplayNameAsync(Guid? userId, CancellationToken ct)
+    {
+        if (userId is null) return null;
+        return await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId.Value)
+            .Select(u => u.DisplayName != "" ? u.DisplayName : u.Username)
+            .FirstOrDefaultAsync(ct);
     }
 
     // ------------------------------ 用例关联 / 复现流水
@@ -514,6 +572,21 @@ public class DefectService
             defect.UpdatedAt = now;
         }
         await _db.SaveChangesAsync(ct);
+
+        // 闭环是好事但没人盯着：提交人要知道自己提的问题已经随回归通过自动关闭了
+        foreach (var defect in toVerify)
+        {
+            await _notifications.PushAsync(defect.CreatedById, new NotificationDraft(
+                NotificationCategory.Defect,
+                $"缺陷已随回归通过自动闭环：{defect.Title}",
+                Level: NotificationLevel.Success,
+                Body: "关联用例整条执行通过，已自动置为「验证通过」",
+                LinkUrl: $"/defects?openDefect={defect.Id}",
+                LinkLabel: "查看缺陷",
+                SourceType: "Defect",
+                SourceId: defect.Id), ct);
+        }
+
         return toVerify.Count;
     }
 

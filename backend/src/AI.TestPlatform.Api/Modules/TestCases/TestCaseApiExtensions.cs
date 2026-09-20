@@ -120,8 +120,10 @@ public static class TestCaseApiExtensions
         // Excel 用例导入（multipart/form-data：file + projectId + useAi + overwrite + baseUrl）
         group.MapPost("/import", async (
             HttpRequest request,
+            HttpContext http,
             TestDbContext db,
             TestCaseImportService importService,
+            InAppNotificationService inApp,
             CancellationToken ct) =>
         {
             if (!request.HasFormContentType)
@@ -164,6 +166,19 @@ public static class TestCaseApiExtensions
                     stream, projectId, useAi,
                     string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl,
                     overwrite, testPlanId, ct);
+
+                // 导入要跑几分钟（AI 解析更久），用户多半已经切走页面了 —— 结果得能"回来再看"
+                await inApp.PushAsync(http.User.GetUserId(), new NotificationDraft(
+                    NotificationCategory.Import,
+                    $"用例导入完成：成功 {result.Imported + result.Updated} 条",
+                    Level: result.Failed > 0 ? NotificationLevel.Warning : NotificationLevel.Success,
+                    Body: $"共 {result.TotalRows} 行 · 新增 {result.Imported} / 更新 {result.Updated}"
+                          + $" / 跳过 {result.Skipped} / 失败 {result.Failed}",
+                    LinkUrl: "/testcases",
+                    LinkLabel: "查看用例",
+                    SourceType: "Project",
+                    SourceId: projectId), ct);
+
                 return Results.Ok(result);
             }
             catch (InvalidOperationException ex)
@@ -531,7 +546,7 @@ public static class TestCaseApiExtensions
         // 提交评审：None/Rejected → Pending。通知项目测试负责人（有邮箱时）。
         group.MapPost("/{id:guid}/submit-review", async (
             Guid id, TestDbContext db, HttpContext http,
-            NotificationService notifications, CancellationToken ct) =>
+            NotificationService notifications, InAppNotificationService inApp, CancellationToken ct) =>
         {
             var testCase = await db.TestCases.Include(t => t.Project)
                 .FirstOrDefaultAsync(t => t.Id == id, ct);
@@ -561,6 +576,24 @@ public static class TestCaseApiExtensions
                     $"【AI 测试平台】{submitterName} 提交了用例评审：「{testCase.Name}」",
                     $"{submitterName} 提交了用例「{testCase.Name}」的评审申请，请登录平台处理。");
             }
+
+            // 站内消息优先给项目测试负责人；项目没配负责人时退化为「所有能管用例的人」——
+            // 邮件那条路径没配收件人是静默跳过，站内消息不该也把消息丢掉
+            var reviewDraft = new NotificationDraft(
+                NotificationCategory.Review,
+                $"{submitterName} 提交了用例评审：{testCase.Name}",
+                Level: NotificationLevel.Warning,
+                Body: testCase.Project?.Name is { } projectName ? $"项目：{projectName}" : null,
+                LinkUrl: $"/testcases/{testCase.Id}",
+                LinkLabel: "查看用例",
+                SourceType: "TestCase",
+                SourceId: testCase.Id);
+
+            if (reviewer is not null && reviewer.Id != userId)
+                await inApp.PushAsync(reviewer.Id, reviewDraft, ct);
+            else
+                await inApp.PushToPermissionAsync(Permission.ManageTestCases, reviewDraft, userId, ct);
+
             return Results.Ok(new { message = "已提交评审" });
         }).WithPermission(Permission.ManageTestCases).WithAudit("SubmitReview", "TestCase");
 
@@ -568,7 +601,7 @@ public static class TestCaseApiExtensions
         group.MapPost("/{id:guid}/review", async (
             Guid id, ReviewActionRequest request,
             TestDbContext db, HttpContext http,
-            NotificationService notifications, CancellationToken ct) =>
+            NotificationService notifications, InAppNotificationService inApp, CancellationToken ct) =>
         {
             var testCase = await db.TestCases.FirstOrDefaultAsync(t => t.Id == id, ct);
             if (testCase is null)
@@ -605,6 +638,18 @@ public static class TestCaseApiExtensions
                         $"【AI 测试平台】用例「{testCase.Name}」的评审{verb}",
                         $"你提交的用例「{testCase.Name}」评审{verb}。{noteText}");
                 }
+
+                // 站内消息不看邮箱：提交人一定有账号，这是他最该知道的一条结论
+                var approved = request.Action == "approve";
+                await inApp.PushAsync(submitterId, new NotificationDraft(
+                    NotificationCategory.Review,
+                    $"用例评审{(approved ? "已通过" : "已驳回")}：{testCase.Name}",
+                    Level: approved ? NotificationLevel.Success : NotificationLevel.Warning,
+                    Body: string.IsNullOrWhiteSpace(note) ? null : $"评审意见：{note}",
+                    LinkUrl: $"/testcases/{testCase.Id}",
+                    LinkLabel: "查看用例",
+                    SourceType: "TestCase",
+                    SourceId: testCase.Id), ct);
             }
             return Results.Ok(new { message = request.Action == "approve" ? "已批准" : "已驳回" });
         }).WithPermission(Permission.ManageTestCases).WithAudit("Review", "TestCase");

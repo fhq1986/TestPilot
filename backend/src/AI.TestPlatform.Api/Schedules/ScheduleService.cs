@@ -1,4 +1,5 @@
 using AI.TestPlatform.Api.Execution;
+using AI.TestPlatform.Api.Notifications;
 using AI.TestPlatform.Api.TestPlans;
 using AI.TestPlatform.Application.TestPlans;
 using AI.TestPlatform.Application.Schedules;
@@ -23,15 +24,18 @@ public class ScheduleService
     private readonly ExecutionQueue _queue;
     private readonly ExecutionPlanner _planner;
     private readonly TestPlanService _planService;
+    private readonly InAppNotificationService _notifications;
     private readonly ILogger<ScheduleService> _logger;
 
     public ScheduleService(TestDbContext db, ExecutionQueue queue, ExecutionPlanner planner,
-        TestPlanService planService, ILogger<ScheduleService> logger)
+        TestPlanService planService, InAppNotificationService notifications,
+        ILogger<ScheduleService> logger)
     {
         _db = db;
         _queue = queue;
         _planner = planner;
         _planService = planService;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -267,5 +271,23 @@ public class ScheduleService
         if (error.Contains("Cron", StringComparison.OrdinalIgnoreCase)) schedule.Enabled = false;
         schedule.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        // 定时任务常在夜间无人值守时跑，失败没人会当场看见 —— 这条最需要站内消息。
+        // 接收人取项目的「测试负责人」：Schedule 表没有创建人字段（见实体定义），
+        // 项目负责人是这张表唯一能推导出的责任人。
+        var testOwnerId = await _db.Projects.AsNoTracking()
+            .Where(p => p.Id == schedule.ProjectId)
+            .Select(p => p.TestOwnerId)
+            .FirstOrDefaultAsync(ct);
+
+        await _notifications.PushAsync(testOwnerId, new NotificationDraft(
+            NotificationCategory.Schedule,
+            $"定时任务执行失败：{schedule.Name}",
+            Level: NotificationLevel.Error,
+            Body: schedule.LastError,
+            LinkUrl: "/schedules",
+            LinkLabel: "查看定时任务",
+            SourceType: "Schedule",
+            SourceId: schedule.Id), ct);
     }
 }
