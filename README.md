@@ -130,9 +130,9 @@ docker compose up -d --build
 
 ## 📸 界面预览
 
-> 全部截图来自真实运行中的平台（含真实用例、执行记录与轮次数据）。
+> 以下是来自部分功能页面截图
 
-| 界面预览 | 界面预览 |
+|  |  |
 | :---: | :---: |
 | ![仪表盘](docs/assets/screenshots/dashboard.png) | ![项目管理](docs/assets/screenshots/projects.png) |
 | **仪表盘** · 质量趋势 / 达标态势 / 定时任务健康 | **项目管理** · 多项目隔离与环境配置 |
