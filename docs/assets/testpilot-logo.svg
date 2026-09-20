@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景圆 -->
+  <circle cx="100" cy="100" r="96" fill="url(#bg)"/>
+  <circle cx="100" cy="100" r="96" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+
+  <!-- 头盔剪影 -->
+  <g transform="translate(100, 92)" filter="url(#glow)">
+    <!-- 头盔外壳 -->
+    <path d="M -42 2 C -42 -28 -22 -48 0 -48 C 22 -48 42 -28 42 2 L 42 24 L 32 28 L -32 28 L -42 24 Z"
+          fill="#f1f5f9" opacity="0.95"/>
+    <!-- 护目镜（嵌入勾号的窗口） -->
+    <rect x="-32" y="-14" width="64" height="24" rx="6" fill="url(#visor)"/>
+    <!-- 勾号 -->
+    <path d="M -14 -2 L -4 8 L 16 -12" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- 头盔底部轮廓 -->
+    <path d="M -42 24 Q -42 32 -34 34 L 34 34 Q 42 32 42 24 L 42 28 Q 42 40 20 40 L -20 40 Q -42 40 -42 28 Z"
+          fill="#e2e8f0"/>
+  </g>
+
+  <!-- TP 字母 -->
+  <g transform="translate(100, 158)" font-family="'Segoe UI', system-ui, -apple-system, sans-serif"
+     font-weight="800" font-size="22" fill="#ffffff" letter-spacing="4" text-anchor="middle">
+    TP
+  </g>
+
+  <!-- 底部弧线装饰 -->
+  <path d="M 40 178 Q 100 192 160 178" stroke="rgba(255,255,255,0.35)" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

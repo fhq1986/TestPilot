@@ -60,7 +60,10 @@ backend/src/AI.TestPlatform.Api/traces/
 .trae/
 .workbuddy/
 .minio-data/
-docs/
+# docs/ 是内部资料，不入仓库；但 docs/assets/ 是 README 引用的图片（logo / 功能截图），必须跟踪
+docs/*
+!docs/assets/
+!docs/assets/screenshots/
 
 # 生产环境配置不入仓库（含真实连接串/密钥时）
 appsettings.Production.json
