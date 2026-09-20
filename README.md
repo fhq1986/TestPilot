@@ -122,6 +122,8 @@ bash scripts/start-all.sh
 | 📖 Swagger | http://localhost:5210/swagger |
 | 🤖 AIWorker | http://127.0.0.1:8000 |
 
+**线上体验地址**：http://111.231.19.163:8088 （账号 `demo / Demo@13456`）
+
 ### 常用命令
 
 ```bash
@@ -216,8 +218,8 @@ cd frontend && npm run test && npm run type-check && npm run build
 - ✅ **M3 AI 用例生成**（文本需求 → 步骤）
 - ✅ **M4 智能执行**（AI 定位自愈 / SignalR 实时流）
 - ✅ **M5 接口测试**（Swagger 导入 / Mock / AI 业务流）
-- ✅ **M6 诊断与优化**（AI 失败诊断 / CI Webhook / Flake 隔离）
-- 🔜 **M7 企业特性**（SSO / 多租户 / 审计日志 / Grafana 仪表盘）
+- ✅ **M6 诊断与优化**（AI 失败诊断 / CI Webhook / Flake 隔离 / 审计日志）
+- 🔜 **M7 企业特性**（SSO / 多租户 / Grafana 仪表盘）
 - 🔜 **M8 Agent 化**（LLM Agent 自主规划测试 → 执行 → 归因闭环）
 
 ## 🤝 贡献
