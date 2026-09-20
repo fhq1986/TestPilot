@@ -31,6 +31,14 @@ export const DEFECT_STATUS_LABELS: Record<number, string> = {
   6: '已挂起',
 }
 
+/** 执行里某一步骤已关联的缺陷（GET /executions/{id}/defect-links） */
+export interface ExecutionDefectLink {
+  stepOrder: number
+  defectId: string
+  defectTitle: string
+  status: number
+}
+
 export interface DefectListItem {
   id: string
   projectId: string

@@ -280,6 +280,33 @@ public static class ExecutionApiExtensions
                 : Results.Ok(execution.ToDetailDto(execution.TestCase?.Name ?? "(用例已删除)"));
         }).WithPermission(Permission.ViewExecutions);
 
+        // 该执行里「已经转成缺陷」的步骤：执行详情页的「缺陷」列据此避免重复转单。
+        // 两条路径都要覆盖——「创建新缺陷」写的是 Defect.FoundInExecutionId/FoundInStepOrder，
+        // 而「认领已有缺陷」只写 DefectOccurrence 流水，所以必须并上复现流水。
+        group.MapGet("/{id:guid}/defect-links", async (Guid id, TestDbContext db, CancellationToken ct) =>
+        {
+            var created = await db.Defects.AsNoTracking()
+                .Where(d => d.FoundInExecutionId == id && d.FoundInStepOrder != null)
+                .Select(d => new ExecutionDefectLinkDto(
+                    d.FoundInStepOrder!.Value, d.Id, d.Title, d.Status))
+                .ToListAsync(ct);
+
+            var claimed = await db.DefectOccurrences.AsNoTracking()
+                .Where(o => o.ExecutionId == id)
+                .Select(o => new ExecutionDefectLinkDto(
+                    o.StepOrder, o.DefectId, o.Defect.Title, o.Defect.Status))
+                .ToListAsync(ct);
+
+            // 同一步骤可能既被创建又被认领，按步骤去重——前端只关心"这一步有没有缺陷"
+            var merged = created.Concat(claimed)
+                .GroupBy(x => x.StepOrder)
+                .Select(g => g.First())
+                .OrderBy(x => x.StepOrder)
+                .ToList();
+
+            return Results.Ok(merged);
+        }).WithPermission(Permission.ViewTestCases);
+
         // trace 下载（安全审查 S1）：原 /traces 静态目录注册在鉴权之前、完全绕过授权，
         // 而 trace 内含完整 DOM 快照与网络请求头。改为受权端点，与执行详情同一权限门槛。
         group.MapGet("/{id:guid}/trace", async (Guid id, TraceStorage traces, IArtifactStore store) =>
@@ -369,3 +396,9 @@ public static class ExecutionApiExtensions
         return group;
     }
 }
+
+/// <summary>
+/// 执行里某一步骤已关联的缺陷（GET /executions/{id}/defect-links）。
+/// 前端「缺陷」列据此把已转单的步骤显示成缺陷链接，而不是再给一个「转缺陷」入口。
+/// </summary>
+public sealed record ExecutionDefectLinkDto(int StepOrder, Guid DefectId, string DefectTitle, DefectStatus Status);

@@ -169,6 +169,9 @@ public class DefectService
                 evidence.Add($"【错误信息】{result.ErrorMessage}");
             if (execution.AIDiagnosis is not null)
                 evidence.Add($"【AI 诊断】{execution.AIDiagnosis}");
+            // 【截图】与【执行回放】这两行是**结构化标记**：缺陷详情页会把它们从正文里抽出来，
+            // 换成可放大的缩略图和录像播放入口（前端 DefectListView 的 extractEvidence）。
+            // 改格式（前缀文字、每段一个 <p>）会让抽取失效，路径会原样显示给用户。
             if (result?.ScreenshotUrl is not null)
                 evidence.Add($"【截图】{result.ScreenshotUrl}");
             if (execution.TraceUrl is not null)

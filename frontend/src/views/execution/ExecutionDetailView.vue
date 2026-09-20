@@ -224,7 +224,12 @@
         </el-table-column>
         <el-table-column v-if="authStore.can(Permission.ManageTestCases)" label="缺陷" width="110">
           <template #default="{ row }">
-            <el-link v-if="row.status === ExecutionStatus.Failed || row.status === ExecutionStatus.Error"
+            <!-- 已经转过缺陷的步骤不再给「转缺陷」入口，避免同一问题重复开单 -->
+            <el-tooltip v-if="stepDefects.get(row.stepOrder)" placement="top"
+              :content="`已转缺陷：${stepDefects.get(row.stepOrder)?.defectTitle}`">
+              <el-link type="success" size="small" @click="goDefect()">已转缺陷</el-link>
+            </el-tooltip>
+            <el-link v-else-if="row.status === ExecutionStatus.Failed || row.status === ExecutionStatus.Error"
               type="primary" size="small" @click="openDefectDialog(row)">转缺陷</el-link>
             <span v-else>—</span>
           </template>
@@ -286,7 +291,10 @@ import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
 import { Download, Refresh, VideoPause, Loading, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { acceptVisualChange } from '@/api/visual'
-import { cancelExecution, createExecution, downloadExecutionTrace, downloadExecutionVideo, getExecution } from '@/api/execution'
+import {
+  cancelExecution, createExecution, downloadExecutionTrace, downloadExecutionVideo,
+  getExecution, getExecutionDefectLinks,
+} from '@/api/execution'
 import { downloadExecutionReport, saveBlobAsFile } from '@/api/report'
 import {
   addDefectOccurrence, createDefect, getDefects, linkDefectCase,
@@ -300,7 +308,7 @@ import { formatDateTime, formatDuration } from '@/utils/formatter'
 import { ExecutionStatus, TriggerType, type ExecutionDetail, type ExecutionResultItem } from '@/types/execution'
 import { ACTION_TYPE_LABELS, type StepConfig } from '@/types/testcase'
 import { VisualStatus, VISUAL_STATUS_LABELS } from '@/types/visual'
-import { DEFECT_SEVERITY_LABELS, type DefectListItem } from '@/types/defect'
+import { DEFECT_SEVERITY_LABELS, type DefectListItem, type ExecutionDefectLink } from '@/types/defect'
 import type { UserOption } from '@/types/auth'
 
 const route = useRoute()
@@ -384,16 +392,19 @@ const defectForm = ref<{ title: string; severity: number; assignedToId?: string;
 const openDefects = ref<DefectListItem[]>([])
 const linkDefectId = ref<string | undefined>(undefined)
 const userOptions = ref<UserOption[]>([])
+/** 步骤号 → 该步骤已关联的缺陷（「缺陷」列据此禁用重复转单） */
+const stepDefects = ref<Map<number, ExecutionDefectLink>>(new Map())
 let testCaseProjectId: string | null = null
 
-const loadLinkedDefects = async () => {
+const loadDefectState = async () => {
   if (!authStore.can(Permission.ViewTestCases)) return
-  try {
-    const result = await getDefects({ executionId: executionId.value, pageSize: 50 })
-    linkedDefects.value = result.items
-  } catch {
-    linkedDefects.value = []
-  }
+  // 两个请求互不依赖，一起发；任一失败都降级成空（缺陷列只是辅助信息，不该阻断页面）
+  const [defects, links] = await Promise.all([
+    getDefects({ executionId: executionId.value, pageSize: 50 }).catch(() => null),
+    getExecutionDefectLinks(executionId.value).catch(() => null),
+  ])
+  linkedDefects.value = defects?.items ?? []
+  stepDefects.value = new Map((links ?? []).map((l) => [l.stepOrder, l]))
 }
 
 const stepLabel = (row: ExecutionResultItem) => (row.stepOrder < 0 ? '前置' : `步骤 ${row.stepOrder + 1}`)
@@ -472,7 +483,7 @@ const submitDefectDialog = async () => {
       ElMessage.success('已认领到已有缺陷')
     }
     defectDialogVisible.value = false
-    void loadLinkedDefects()
+    void loadDefectState()
   } finally {
     defectSaving.value = false
   }
@@ -624,7 +635,7 @@ const load = async () => {
   } finally {
     loading.value = false
   }
-  void loadLinkedDefects()
+  void loadDefectState()
   scheduleDiagnosisReload()
 }
 
@@ -786,6 +797,7 @@ watch(executionId, async (newId, oldId) => {
   if (!newId || newId === oldId) return
   results.value = []
   linkedDefects.value = []
+  stepDefects.value = new Map()
   currentStepOrder.value = null
   canceling.value = false
   // 换执行必须丢掉上一条的录像，否则播放器里放的还是上一条的内容

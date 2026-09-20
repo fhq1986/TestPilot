@@ -286,9 +286,24 @@
           </div>
         </div>
 
-        <div v-if="detail.description" class="detail-section">
+        <div v-if="descriptionParts.body || descriptionParts.screenshot || descriptionParts.trace"
+          class="detail-section">
           <div class="section-title">描述与证据</div>
-          <RichTextViewer :value="detail.description" />
+          <RichTextViewer v-if="descriptionParts.body" :value="descriptionParts.body" />
+          <!-- 截图与执行回放：后端写进描述的是原始路径（见 DefectService 的证据拼装），
+               直接显示既看不懂也用不上。这里把这两行抽出来渲染成缩略图与播放入口 -->
+          <div v-if="descriptionParts.screenshot || descriptionParts.trace" class="evidence-row">
+            <el-image v-if="descriptionParts.screenshot" :src="descriptionParts.screenshot"
+              :preview-src-list="[descriptionParts.screenshot]" fit="cover" class="evidence-thumb"
+              preview-teleported />
+            <div class="evidence-actions">
+              <el-button v-if="detail.foundInExecutionId" size="small" type="primary" plain
+                :loading="loadingReplay" @click="openReplay">播放执行回放</el-button>
+              <el-link v-if="descriptionParts.trace" type="primary" @click="downloadTrace">
+                下载 trace（含每步 DOM 与网络）
+              </el-link>
+            </div>
+          </div>
         </div>
 
         <div v-if="detail.resolutionNote" class="detail-section">
@@ -341,6 +356,14 @@
         </template>
       </template>
     </el-drawer>
+
+    <!-- 执行回放：录像在受权端点上（需要 JWT），不能直接给 <video src>，
+         得先取成 blob 再喂给播放器；关闭时释放 objectURL，否则整段录像一直占着内存 -->
+    <el-dialog v-model="replayVisible" title="执行回放" width="80%" top="6vh" append-to-body
+      @closed="releaseReplay">
+      <video v-if="replayUrl" :src="replayUrl" controls autoplay class="replay-video" />
+      <div v-else class="muted">录像加载中…</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -356,6 +379,8 @@ import {
   listExternalProviders, pushDefectExternal, transitionDefect, unlinkDefectCase, updateDefect,
 } from '@/api/defect'
 import { getTestCases } from '@/api/testcase'
+import { downloadExecutionTrace, downloadExecutionVideo } from '@/api/execution'
+import { saveBlobAsFile } from '@/api/report'
 import { useAuthStore } from '@/stores/auth'
 import { Permission } from '@/constants/permissions'
 import { formatDateTime } from '@/utils/formatter'
@@ -662,6 +687,61 @@ const goExecution = (executionId: string) => {
   void router.push(`/executions/${executionId}`)
 }
 
+// ------------------------------ 描述里的证据（截图 / 执行回放）
+
+/**
+ * 一键转缺陷时后端会把「【截图】路径」「【执行回放】路径」写进描述（见 DefectService.CreateAsync
+ * 的证据拼装，每段一个 <p>）。原始路径对用户没有意义，这里把这两行抽出来换成缩略图与播放入口，
+ * 正文只留错误信息、AI 诊断这些真正要读的文本。
+ *
+ * 历史数据里也是同样的两行（格式由后端生成，不会漂），所以新旧缺陷走同一套抽取。
+ */
+const extractEvidence = (html: string) => {
+  const screenshot = html.match(/<p>\s*【截图】\s*([^<]*?)\s*<\/p>/)?.[1]
+  const trace = html.match(/<p>\s*【执行回放】\s*([^<]*?)\s*<\/p>/)?.[1]
+  const body = html.replace(/<p>\s*【(截图|执行回放)】\s*[^<]*?\s*<\/p>/g, '').trim()
+  return { body, screenshot, trace }
+}
+
+const descriptionParts = computed(() => extractEvidence(detail.value?.description ?? ''))
+
+const replayVisible = ref(false)
+const replayUrl = ref<string | null>(null)
+const loadingReplay = ref(false)
+
+/** 录像走受权端点，先取成 blob 再交给 <video>；没有录像（仅失败执行保留）时给出可执行的下一步 */
+const openReplay = async () => {
+  const executionId = detail.value?.foundInExecutionId
+  if (!executionId) return
+  replayVisible.value = true
+  if (replayUrl.value) return
+  loadingReplay.value = true
+  try {
+    const blob = await downloadExecutionVideo(executionId)
+    replayUrl.value = URL.createObjectURL(blob)
+  } catch {
+    replayVisible.value = false
+    ElMessage.warning('该执行没有可播放的录像（仅失败执行保留），可下载 trace 用 Playwright Trace Viewer 回放')
+  } finally {
+    loadingReplay.value = false
+  }
+}
+
+/** objectURL 不释放会一直占着那几 MB 内存，直到页面关闭 */
+const releaseReplay = () => {
+  if (replayUrl.value) {
+    URL.revokeObjectURL(replayUrl.value)
+    replayUrl.value = null
+  }
+}
+
+const downloadTrace = async () => {
+  const executionId = detail.value?.foundInExecutionId
+  if (!executionId) return
+  const blob = await downloadExecutionTrace(executionId)
+  saveBlobAsFile(blob, `trace-${executionId}.zip`)
+}
+
 /** 跳到用例详情（「来源用例」列/卡片） */
 const goTestCase = (testCaseId: string) => {
   void router.push(`/testcases/${testCaseId}`)
@@ -833,6 +913,37 @@ async function handlePushExternal(p: ExternalDefectProvider) {
   align-items: center;
   font-size: 13px;
   margin-bottom: 4px;
+}
+
+/* 证据区：缩略图在左，播放/下载入口在右 */
+.evidence-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.evidence-thumb {
+  width: 160px;
+  height: 90px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  cursor: zoom-in;
+  flex-shrink: 0;
+}
+
+.evidence-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.replay-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 4px;
+  background: #000;
 }
 
 .case-tag {

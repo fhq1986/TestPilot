@@ -1,5 +1,6 @@
 import request from './request'
 import type { ExecutionDetail, ExecutionSummary, ExecutionStatus } from '@/types/execution'
+import type { ExecutionDefectLink } from '@/types/defect'
 import type { PagedResult } from '@/types/project'
 import type { BatchDeleteResult } from '@/types/common'
 
@@ -21,6 +22,10 @@ export const getExecutions = (params: {
 }) => request.get<unknown, PagedResult<ExecutionSummary>>('/executions', { params })
 
 export const getExecution = (id: string) => request.get<unknown, ExecutionDetail>(`/executions/${id}`)
+
+/** 该执行里已经转成缺陷的步骤（执行详情页「缺陷」列据此避免重复转单） */
+export const getExecutionDefectLinks = (executionId: string) =>
+  request.get<unknown, ExecutionDefectLink[]>(`/executions/${executionId}/defect-links`)
 
 export const createExecution = (data: {
   testCaseId: string
