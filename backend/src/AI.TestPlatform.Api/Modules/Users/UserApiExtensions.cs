@@ -15,17 +15,20 @@ public static class UserApiExtensions
         // 分页 + 服务端筛选（之前是全量返回，账号一多就变成一次全表拉取）
         group.MapGet("/", async (
             UserService users,
+            ICurrentUser current,
             CancellationToken ct,
             [FromQuery] string? search = null,
             [FromQuery] UserRole? role = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
-            Results.Ok(await users.ListAsync(search, role, page, pageSize, ct)))
+            // 内置超级管理员只对他自己可见，其他人（含管理员）的用户列表里不出现
+            Results.Ok(await users.ListAsync(search, role, page, pageSize,
+                current.Role == UserRole.SuperAdmin, ct)))
             .WithPermission(Permission.ManageUsers);
 
         // 各角色人数：列表页概览徽标用，避免前端为此再拉一次全量
-        group.MapGet("/role-counts", async (UserService users, CancellationToken ct) =>
-            Results.Ok(await users.CountByRoleAsync(ct)))
+        group.MapGet("/role-counts", async (UserService users, ICurrentUser current, CancellationToken ct) =>
+            Results.Ok(await users.CountByRoleAsync(current.Role == UserRole.SuperAdmin, ct)))
             .WithPermission(Permission.ManageUsers);
 
         // 用户选项：供「项目负责人 / 测试负责人」下拉用。
@@ -70,6 +73,13 @@ public static class UserApiExtensions
                     ["password"] = [passwordError],
                 });
 
+            // 超级管理员为内置保留角色，不允许通过用户管理创建
+            if (request.Role == UserRole.SuperAdmin)
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["role"] = ["超级管理员为内置角色，不可创建"],
+                });
+
             var emailError = ValidateEmail(request.Email);
             if (emailError is not null)
                 return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -97,7 +107,9 @@ public static class UserApiExtensions
                     ["email"] = [emailError],
                 });
 
-            var updated = await users.UpdateAsync(id, request, ct);
+            var (updated, error) = await users.UpdateAsync(id, request, ct);
+            if (error is not null)
+                return Results.Json(new { message = error }, statusCode: StatusCodes.Status400BadRequest);
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         }).WithPermission(Permission.ManageUsers).WithAudit("Update", "User");
 

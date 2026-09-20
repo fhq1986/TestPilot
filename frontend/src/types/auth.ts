@@ -3,6 +3,8 @@ export const UserRole = {
   Admin: 0,
   Tester: 1,
   Viewer: 2,
+  /** 内置超级管理员：拥有全部权限，不在他人用户列表出现、不可删除、不可降权 */
+  SuperAdmin: 3,
 } as const
 
 export type UserRoleValue = (typeof UserRole)[keyof typeof UserRole]

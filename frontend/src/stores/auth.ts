@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { loginApi, meApi } from '@/api/auth'
 import { hasPermission } from '@/constants/permissions'
+import { UserRole } from '@/types/auth'
 import type { UserInfo } from '@/types/auth'
 
 const TOKEN_KEY = 'auth_token'
@@ -26,7 +27,8 @@ export const useAuthStore = defineStore('auth', {
     role: (state) => state.user?.role ?? null,
     roleName: (state) => state.user?.roleName ?? '',
     permissions: (state) => state.user?.permissions ?? 0,
-    isAdmin: (state) => state.user?.role === 0,
+    // 超级管理员与管理员同级（用于头部角色标签配色等展示场景）
+    isAdmin: (state) => state.user?.role === UserRole.Admin || state.user?.role === UserRole.SuperAdmin,
     /**
      * 权限判断入口。用法：`auth.can(Permission.ManageUsers)`
      *

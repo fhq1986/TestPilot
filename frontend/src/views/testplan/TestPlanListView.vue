@@ -340,10 +340,10 @@ const saving = ref(false)
 const envDialogVisible = ref(false)
 const selectedEnvId = ref('')
 const envRow = ref<TestPlanSummary | null>(null)
-// 不预设项目：进来先看「全部项目」下的进行中计划，而不是替用户挑一个项目
+// 不预设项目：进来先看「全部项目」，而不是替用户挑一个
 const projectId = ref('')
-// 默认只看「进行中」：计划是用来做验收的，草稿和已归档的会淹没真正需要关注的
-const statusFilter = ref<number | ''>(TestPlanStatus.Active)
+// 默认显示全部状态：新建的计划是草稿（Draft），默认筛「进行中」会让它凭空消失
+const statusFilter = ref<number | ''>('')
 const releaseFilter = ref('')
 const search = ref('')
 // 分页列表状态机（页码/页大小/总数/loading），见 composables/usePagedList.ts

@@ -104,7 +104,9 @@ public static class CommentApiExtensions
 
             // 只有作者本人或管理员能删——评论是协作留痕，不能被无关人清掉
             var userId = http.User.GetUserId();
-            var isAdmin = http.User.FindFirst(CurrentUser.RoleClaimType)?.Value == nameof(UserRole.Admin);
+            var role = http.User.FindFirst(CurrentUser.RoleClaimType)?.Value;
+            // 超级管理员与管理员同级：都能删任意评论
+            var isAdmin = role == nameof(UserRole.Admin) || role == nameof(UserRole.SuperAdmin);
             if (comment.AuthorId != userId && !isAdmin)
                 return Results.Json(new { message = "只有作者本人或管理员可以删除评论" }, statusCode: 403);
 

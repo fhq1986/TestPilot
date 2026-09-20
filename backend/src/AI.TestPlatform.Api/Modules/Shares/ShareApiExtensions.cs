@@ -53,7 +53,11 @@ public static class ShareApiExtensions
             db.ReportShares.Add(share);
             await db.SaveChangesAsync(ct);
 
-            return Results.Ok(ToDto(share, FrontendBase(configuration)));
+            // 链接基于请求来源推断的地址拼，而不是 AllowedOrigins：后者可能写 localhost，
+            // 生成的分享链接会变成 localhost 而无法从外网访问
+            var baseUrl = ReportShareLinkService.ClientFrontendBase(http.Request)
+                ?? FrontendBase(configuration);
+            return Results.Ok(ToDto(share, baseUrl));
         }).WithPermission(Permission.ViewReports).WithAudit("Create", "ReportShare");
 
         group.MapGet("/", async (

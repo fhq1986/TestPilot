@@ -102,7 +102,7 @@ public enum TriggerType { Manual, Scheduled, CIWebhook, AIRegression, TestPlan }
 public enum ScheduleScopeKind { Cases = 0, TestPlan = 1 }
 
 /// <summary>
-/// 用户角色（迭代 C）：三角色固定 RBAC，管理员 / 测试工程师 / 只读访客。
+/// 用户角色（迭代 C）：固定 RBAC，超级管理员 / 管理员 / 测试工程师 / 只读访客。
 /// 数值刻意从 0 开始且 Admin=0，与数据库列的默认值一致——迁移回填时老用户自动成为管理员，
 /// 与「升级前任何登录用户都能访问一切」的既有行为保持等价，不会因升级而失去权限。
 /// </summary>
@@ -111,6 +111,13 @@ public enum UserRole
     Admin = 0,
     Tester = 1,
     Viewer = 2,
+
+    /// <summary>
+    /// 内置超级管理员：拥有全部权限（含用户管理 / 系统设置）。
+    /// 不参与常规用户管理——不出现在他人的用户列表里、不可被删除、不可被降权，
+    /// 由种子数据创建且仅此一个。值追加在末尾：Role 按 int 落库，改动既有序号会让存量用户角色错位。
+    /// </summary>
+    SuperAdmin = 3,
 }
 
 /// <summary>

@@ -36,7 +36,7 @@ describe('Permission 位图', () => {
     }
   })
 
-  it('三个内置角色的权限位图与后端 PermissionCatalog 一致', () => {
+  it('内置角色的权限位图与后端 PermissionCatalog 一致', () => {
     // 只读访客 = 5 个查看权限（含查看测试计划——计划与报告是验收材料，访客要能看）
     const viewer =
       Permission.ViewProjects | Permission.ViewTestCases |
@@ -52,9 +52,13 @@ describe('Permission 位图', () => {
     expect(tester & Permission.ManageSettings).toBe(0)
     expect(tester & Permission.ViewAuditLog).toBe(0)
 
-    // 管理员 = 全部 16 个权限点
-    const admin = Object.values(Permission).reduce((acc, v) => acc | v, 0)
-    expect(admin).toBe(65535)
+    // 超级管理员 = 全部 16 个权限点
+    const all = Object.values(Permission).reduce((acc, v) => acc | v, 0)
+    expect(all).toBe(65535)
+
+    // 管理员 = 全集去掉「用户管理」与「系统设置」（这两块收归超级管理员）
+    const admin = all & ~Permission.ManageUsers & ~Permission.ManageSettings
+    expect(admin).toBe(65535 - (1 << 12) - (1 << 11))
   })
 })
 

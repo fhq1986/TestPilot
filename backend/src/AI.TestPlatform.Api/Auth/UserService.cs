@@ -55,11 +55,17 @@ public class UserService
     ///
     /// 之前是全量返回：单团队几十个账号没问题，但用户数一多，
     /// 列表接口就会变成一次全表拉取，前端也不得不把所有行渲染出来。
+    ///
+    /// 内置超级管理员默认对所有人隐藏（含管理员），只有他自己（<paramref name="includeSuperAdmin"/>）
+    /// 才能在自己的用户列表里看到自己。
     /// </summary>
     public async Task<PagedResult<UserViewDto>> ListAsync(
-        string? search, UserRole? role, int page, int pageSize, CancellationToken ct)
+        string? search, UserRole? role, int page, int pageSize, bool includeSuperAdmin, CancellationToken ct)
     {
         var query = _db.Users.AsNoTracking().AsQueryable();
+
+        if (!includeSuperAdmin)
+            query = query.Where(u => u.Role != UserRole.SuperAdmin);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -81,14 +87,18 @@ public class UserService
     }
 
     /// <summary>各角色人数（列表页顶部的概览徽标用，避免前端为此再拉一次全量）</summary>
-    public async Task<Dictionary<string, int>> CountByRoleAsync(CancellationToken ct)
+    public async Task<Dictionary<string, int>> CountByRoleAsync(bool includeSuperAdmin, CancellationToken ct)
     {
-        var counts = await _db.Users.AsNoTracking()
+        var query = _db.Users.AsNoTracking().AsQueryable();
+        if (!includeSuperAdmin)
+            query = query.Where(u => u.Role != UserRole.SuperAdmin);
+
+        var counts = await query
             .GroupBy(u => u.Role)
             .Select(g => new { Role = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
-        // 三个角色都要出现（哪怕是 0），前端不必自己补缺
+        // 各角色都要出现（哪怕是 0），前端不必自己补缺
         return Enum.GetValues<UserRole>().ToDictionary(
             r => r.ToString(),
             r => counts.FirstOrDefault(c => c.Role == r)?.Count ?? 0);
@@ -166,13 +176,25 @@ public class UserService
 
     /// <summary>
     /// 更新用户信息。角色或启用状态发生变化时自增 TokenVersion（旧 token 立即失效）。
-    /// 返回 null 表示用户不存在。
+    ///
+    /// 返回 <c>(null, null)</c> 表示用户不存在；<c>(null, 错误)</c> 表示被业务规则拒绝
+    /// （内置超级管理员的角色 / 启用状态不可改、超级管理员角色不可分配给其它账号）。
     /// </summary>
-    public async Task<UserViewDto?> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken ct)
+    public async Task<(UserViewDto? Dto, string? Error)> UpdateAsync(
+        Guid id, UpdateUserRequest request, CancellationToken ct)
     {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null)
-            return null;
+            return (null, null);
+
+        // 内置超级管理员：角色与启用状态锁定，防止被降权 / 停用后无人能管用户
+        if (user.Role == UserRole.SuperAdmin &&
+            (request.Role != UserRole.SuperAdmin || !request.IsActive))
+            return (null, "内置超级管理员的角色与启用状态不可更改");
+
+        // 超级管理员为内置保留角色，不允许通过用户管理分配给其它账号
+        if (user.Role != UserRole.SuperAdmin && request.Role == UserRole.SuperAdmin)
+            return (null, "超级管理员为内置角色，不可分配");
 
         var invalidateSessions = user.Role != request.Role || user.IsActive != request.IsActive;
 
@@ -189,7 +211,7 @@ public class UserService
         }
 
         await _db.SaveChangesAsync(ct);
-        return ToView(user);
+        return (ToView(user), null);
     }
 
     /// <summary>重置密码（管理员操作），同时踢掉该用户所有在线会话</summary>
@@ -238,6 +260,10 @@ public class UserService
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null)
             return (false, "用户不存在");
+
+        // 内置超级管理员不可删除——删掉后没人能进入用户管理 / 系统设置
+        if (user.Role == UserRole.SuperAdmin)
+            return (false, "内置超级管理员账号不允许删除");
 
         if (user.Id == currentUserId)
             return (false, "不能删除当前登录的账号");

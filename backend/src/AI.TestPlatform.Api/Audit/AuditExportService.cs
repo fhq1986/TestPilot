@@ -165,6 +165,7 @@ public static class AuditExportService
 
     private static string RoleLabel(string? role) => role switch
     {
+        nameof(UserRole.SuperAdmin) => "超级管理员",
         nameof(UserRole.Admin) => "管理员",
         nameof(UserRole.Tester) => "测试工程师",
         nameof(UserRole.Viewer) => "只读访客",

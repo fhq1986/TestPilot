@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, FolderChecked, Refresh, Select, Share, VideoPlay } from '@element-plus/icons-vue'
@@ -188,17 +188,42 @@ async function handleShare() {
       expiresInDays: 7,
     })
     await ElMessageBox.confirm(
-      `分享链接已生成（7 天后过期，可随时吊销）：\n${link.url}\n\n点击「复制」把链接放到剪贴板。`,
+      `分享链接已生成（7 天后过期，可随时吊销）：\n${link.url}\n\n点击「复制链接」把链接放到剪贴板。`,
       '分享验收报告',
-      { confirmButtonText: '复制', cancelButtonText: '关闭', type: 'success' },
+      { confirmButtonText: '复制链接', cancelButtonText: '关闭', type: 'success' },
     )
       .then(async () => {
-        await navigator.clipboard.writeText(link.url)
-        ElMessage.success('链接已复制')
+        const ok = await copyText(link.url)
+        ElMessage[ok ? 'success' : 'warning'](ok ? '链接已复制到剪贴板' : '复制失败，请手动选中链接复制')
       })
       .catch(() => undefined)
   } finally {
     sharing.value = false
+  }
+}
+
+/** 复制文本：优先 Clipboard API，非安全上下文（http）下退回旧式 execCommand */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 落空则继续走 execCommand 回退
+  }
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
   }
 }
 
@@ -322,6 +347,52 @@ async function persistOrder(ids: string[]) {
 }
 
 onMounted(loadAll)
+
+// ------------------------------ 执行中自动刷新
+//
+// 轮次跑起来后通过率/耗时/结果都在变，原来只能手动点「刷新」才看得到。
+// 这里做轮询：只要还存在「进行中」的轮次，就每 5 秒静默重拉一次轮次列表与达标判定；
+// 轮次全部结束后自动停掉。用静默刷新（不动整页 loading 遮罩），避免每 5 秒闪一次。
+const POLL_INTERVAL_MS = 5000
+let pollTimer: ReturnType<typeof setInterval> | undefined
+
+/** 只重拉轮次 + 达标判定：执行过程中用例范围不会变，没必要连 items 一起拉 */
+async function refreshRoundsQuietly() {
+  try {
+    const [roundList, rep] = await Promise.all([
+      listPlanRoundsApi(planId),
+      planReportApi(planId).catch(() => null),
+    ])
+    rounds.value = roundList
+    report.value = rep
+  } catch {
+    // 轮询失败不打断页面：下一轮会再试，避免网络抖动弹一堆错误提示
+  }
+}
+
+function stopPolling() {
+  if (pollTimer !== undefined) {
+    clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
+
+function startPolling() {
+  if (pollTimer !== undefined) return
+  pollTimer = setInterval(() => {
+    // 没有进行中的轮次了（跑完/中止）→ 停止轮询
+    if (!runningRound.value) {
+      stopPolling()
+      return
+    }
+    void refreshRoundsQuietly()
+  }, POLL_INTERVAL_MS)
+}
+
+// 进行中的轮次出现/消失时自动开关轮询（含首屏加载后已有运行中轮次的情况）
+watch(runningRound, (round) => (round ? startPolling() : stopPolling()), { immediate: true })
+
+onUnmounted(stopPolling)
 </script>
 
 <style scoped>

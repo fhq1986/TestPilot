@@ -6,7 +6,7 @@ namespace AI.TestPlatform.Application.Auth;
 /// 角色 → 权限矩阵（迭代 C 的唯一权威定义）。
 ///
 /// 设计取舍：矩阵硬编码在代码里而不是落库，理由是——
-/// 1) 三角色是产品级约定，不是租户可配项；
+/// 1) 角色集合是产品级约定，不是租户可配项；
 /// 2) 落库会引入「配置与代码不一致」的运行时风险（端点已改、数据没改）；
 /// 3) 硬编码可被单元测试直接断言，越权回归测试成本最低。
 /// 将来若需要「自定义角色」，只需把本类换成读库实现，调用方（<see cref="Has"/>）签名不变。
@@ -21,6 +21,14 @@ public static class PermissionCatalog
         Permission.ManageSharedSteps | Permission.ManageSchedules | Permission.ManageSettings |
         Permission.ManageUsers | Permission.ViewAuditLog |
         Permission.ViewTestPlans | Permission.ManageTestPlans;
+
+    /// <summary>
+    /// 管理员权限：全集去掉「用户管理」与「系统设置」。
+    /// 这两块属于平台级配置（改谁能登录、改系统行为），收归内置超级管理员，
+    /// 避免普通管理员越权改用户或改系统配置。
+    /// </summary>
+    public const Permission AdminPermissions =
+        All & ~Permission.ManageUsers & ~Permission.ManageSettings;
 
     /// <summary>只读访客可用的权限</summary>
     public const Permission ViewerPermissions =
@@ -38,7 +46,8 @@ public static class PermissionCatalog
     private static readonly IReadOnlyDictionary<UserRole, Permission> Matrix =
         new Dictionary<UserRole, Permission>
         {
-            [UserRole.Admin] = All,
+            [UserRole.SuperAdmin] = All,
+            [UserRole.Admin] = AdminPermissions,
             [UserRole.Tester] = TesterPermissions,
             [UserRole.Viewer] = ViewerPermissions,
         };
@@ -62,6 +71,7 @@ public static class PermissionCatalog
     /// <summary>角色中文名（用于前端展示与审计日志）</summary>
     public static string DisplayName(UserRole role) => role switch
     {
+        UserRole.SuperAdmin => "超级管理员",
         UserRole.Admin => "管理员",
         UserRole.Tester => "测试工程师",
         UserRole.Viewer => "只读访客",

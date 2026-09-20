@@ -156,12 +156,18 @@ public static class TestPlanApiExtensions
                     ["projectId"] = ["项目不存在"],
                 });
 
+            // 唯一性：同一项目下「名称 + 版本标识」不可重复
+            var name = request.Name.Trim();
+            var releaseName = Trim(request.ReleaseName);
+            if (await IsDuplicatePlanAsync(db, request.ProjectId, name, releaseName, null, ct))
+                return DuplicatePlan(name, releaseName);
+
             var plan = new TestPlan
             {
                 ProjectId = request.ProjectId,
-                Name = request.Name.Trim(),
+                Name = name,
                 Description = Trim(request.Description),
-                ReleaseName = Trim(request.ReleaseName),
+                ReleaseName = releaseName,
                 StartsAt = ToUtc(request.StartsAt),
                 EndsAt = ToUtc(request.EndsAt),
                 OwnerId = request.OwnerId ?? current.Id,
@@ -199,9 +205,15 @@ public static class TestPlanApiExtensions
             var plan = await db.TestPlans.FirstOrDefaultAsync(p => p.Id == id, ct);
             if (plan is null) return Results.NotFound();
 
-            plan.Name = request.Name.Trim();
+            // 唯一性：改名/改版本时也要挡住重复（排除自身，否则「只改描述」会被自己判重）
+            var name = request.Name.Trim();
+            var releaseName = Trim(request.ReleaseName);
+            if (await IsDuplicatePlanAsync(db, plan.ProjectId, name, releaseName, id, ct))
+                return DuplicatePlan(name, releaseName);
+
+            plan.Name = name;
             plan.Description = Trim(request.Description);
-            plan.ReleaseName = Trim(request.ReleaseName);
+            plan.ReleaseName = releaseName;
             plan.StartsAt = ToUtc(request.StartsAt);
             plan.EndsAt = ToUtc(request.EndsAt);
             plan.OwnerId = request.OwnerId;
@@ -246,11 +258,19 @@ public static class TestPlanApiExtensions
                 .FirstOrDefaultAsync(p => p.Id == id, ct);
             if (source is null) return Results.NotFound();
 
+            // 复制出来的名称可能撞上既有计划（同名同版本）——自动加序号直到唯一，
+            // 否则「复制」这个动作会被唯一性校验拦下，用户还得手动改名才能复制
+            var baseName = $"{source.Name} 副本";
+            var copyName = baseName;
+            var seq = 2;
+            while (await IsDuplicatePlanAsync(db, source.ProjectId, copyName, source.ReleaseName, null, ct))
+                copyName = $"{baseName}{seq++}";
+
             // 复制刻意**不带轮次**：新版本要从干净的历史开始，把上一版的轮次带过来只会误导
             var copy = new TestPlan
             {
                 ProjectId = source.ProjectId,
-                Name = $"{source.Name} 副本",
+                Name = copyName,
                 Description = source.Description,
                 ReleaseName = source.ReleaseName,
                 Status = TestPlanStatus.Draft,
@@ -596,6 +616,32 @@ public static class TestPlanApiExtensions
 
     private static string? Trim(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// 计划查重：同一项目下「计划名称 + 版本标识」必须唯一。
+    ///
+    /// ReleaseName 可空：Trim 后空串已归一为 null，此处用 <c>== releaseName</c> 比较，
+    /// EF 会翻译成 <c>IS NULL</c>，因此「无版本号」也构成同一个键——
+    /// 否则建两个同名且都不带版本的计划会被放行。
+    /// <paramref name="excludeId"/> 用于更新时排除自身（只改描述、名称不动不该被判重复）。
+    /// </summary>
+    private static async Task<bool> IsDuplicatePlanAsync(
+        TestDbContext db, Guid projectId, string name, string? releaseName,
+        Guid? excludeId, CancellationToken ct) =>
+        await db.TestPlans.AsNoTracking().AnyAsync(p =>
+            p.ProjectId == projectId
+            && p.Name == name
+            && p.ReleaseName == releaseName
+            && (excludeId == null || p.Id != excludeId), ct);
+
+    /// <summary>计划重复的统一 409 响应（带出名称与版本标识，便于用户定位是哪一条）</summary>
+    private static IResult DuplicatePlan(string name, string? releaseName)
+    {
+        var version = string.IsNullOrWhiteSpace(releaseName) ? "（无版本标识）" : $"「{releaseName}」";
+        return Results.Json(
+            new { message = $"该项目下已存在名称为「{name}」、版本标识为{version}的测试计划" },
+            statusCode: StatusCodes.Status409Conflict);
+    }
 
     /// <summary>
     /// 反查引用该计划的定时任务。

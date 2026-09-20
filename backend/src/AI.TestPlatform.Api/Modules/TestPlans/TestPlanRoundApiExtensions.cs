@@ -19,9 +19,11 @@ public static class TestPlanRoundApiExtensions
         group.MapPost("/{id:guid}/rounds", async (Guid id, StartRoundRequest? request,
             TestPlanService plans, ICurrentUser current, CancellationToken ct) =>
         {
+            // 手动开轮：触发方式是「手动」。曾写死成 TriggerType.TestPlan，
+            // 导致轮次与它产生的执行都显示成「测试计划」，看不出到底是人点的还是定时触发的。
             var (round, error) = await plans.StartRoundAsync(id,
                 request ?? new StartRoundRequest(),
-                TriggerType.TestPlan, null, current.Id, ct);
+                TriggerType.Manual, null, current.Id, ct);
 
             if (round is null)
             {

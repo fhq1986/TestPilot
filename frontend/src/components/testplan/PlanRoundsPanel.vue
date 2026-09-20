@@ -13,9 +13,11 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="结果" width="240">
+      <el-table-column label="结果" width="380">
         <template #default="{ row }">
+          <!-- 用例总数用开轮时确定的 createdCount：运行中的轮次四类结果还是 0，求和会显示「共0个用例」 -->
           <span class="stat-line">
+            共 {{ row.createdCount }} 个用例，其中
             通过 <b class="ok">{{ row.stats.passed }}</b> /
             失败 <b class="bad">{{ row.stats.failed }}</b> /
             错误 <b class="bad">{{ row.stats.error }}</b> /
@@ -23,7 +25,7 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="通过率" width="140">
+      <el-table-column label="通过率" width="130">
         <template #default="{ row }">
           <el-tag v-if="row.stats.total > 0"
             :type="row.stats.passRate >= targetPassRate ? 'success' : 'danger'"
@@ -86,7 +88,9 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="testCaseName" label="用例名称" min-width="240" />
+          <el-table-column prop="testCaseName" label="用例名称" min-width="240">
+            <template #default="{ row, $index }">{{ $index + 1 }}.&nbsp;{{ row.testCaseName }}</template>
+          </el-table-column>
           <el-table-column label="模块" width="140">
             <template #default="{ row }">{{ row.module || '—' }}</template>
           </el-table-column>
@@ -107,12 +111,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { getPlanRoundApi } from '@/api/testPlan'
 import { downloadExecutionTrace } from '@/api/execution'
 import { saveBlobAsFile } from '@/api/report'
 import { formatDateTime } from '@/utils/formatter'
 import type { PlanRoundCaseResult, PlanRoundSummary } from '@/types/testPlan'
+import { PlanRoundStatus } from '@/types/testPlan'
 import {
   execStatusLabel, execTagType, roundDuration, roundStatusLabel, roundStatusTag,
   triggerLabel, worstStatus,
@@ -148,7 +153,45 @@ async function openRound(row: PlanRoundSummary) {
   roundDetail.value = await getPlanRoundApi(row.id)
   expandedKeys.value = [] // 每次打开明细从全部收起开始
   roundDrawer.value = true
+  startDetailPolling()
 }
+
+// ------------------------------ 执行中明细自动刷新
+//
+// 抽屉打开时若该轮还在跑，明细里的用例状态/耗时也在变，原来必须关掉重开才更新。
+// 这里在「抽屉打开且该轮仍为进行中」时每 5 秒静默重拉一次明细；轮次结束或抽屉关闭即停。
+const DETAIL_POLL_INTERVAL_MS = 5000
+let detailTimer: ReturnType<typeof setInterval> | undefined
+
+function stopDetailPolling() {
+  if (detailTimer !== undefined) {
+    clearInterval(detailTimer)
+    detailTimer = undefined
+  }
+}
+
+function startDetailPolling() {
+  stopDetailPolling()
+  if (roundDetail.value?.round.status !== PlanRoundStatus.Running) return
+  detailTimer = setInterval(async () => {
+    // 抽屉已关、或该轮已跑完/中止 → 停止轮询
+    if (!roundDrawer.value || roundDetail.value?.round.status !== PlanRoundStatus.Running) {
+      stopDetailPolling()
+      return
+    }
+    try {
+      roundDetail.value = await getPlanRoundApi(roundDetail.value.round.id)
+    } catch {
+      // 轮询失败不打断阅读：下一轮会再试
+    }
+  }, DETAIL_POLL_INTERVAL_MS)
+}
+
+// 抽屉关闭时停止轮询，避免关掉后还在后台空转
+watch(roundDrawer, (open) => {
+  if (!open) stopDetailPolling()
+})
+onUnmounted(stopDetailPolling)
 
 /** trace 是受权端点（安全审查 S1），带 JWT 走 blob 下载 */
 const handleTraceDownload = async (executionId: string) => {

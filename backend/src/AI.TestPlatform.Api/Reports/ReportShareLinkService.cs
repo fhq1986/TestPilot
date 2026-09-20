@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace AI.TestPlatform.Api.Reports;
@@ -42,18 +43,43 @@ public class ReportShareLinkService
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
     }
 
-    /// <summary>前端地址：分享链接指向前端 SPA 的 /share/{token} 路由</summary>
-    public static string FrontendBase(IConfiguration configuration)
+    /// <summary>
+    /// 前端地址：分享链接指向前端 SPA 的 /share/{token} 路由。
+    ///
+    /// 优先用 <paramref name="overrideBase"/>（请求头推断出的、浏览器实际访问的地址），
+    /// 没有时退回配置 <c>AllowedOrigins</c> 的第一个值。
+    /// 直接用 AllowedOrigins 拼链接有个坑：它控制 CORS 放行，常在本地/内网写成 localhost，
+    /// 生成的分享链接就会指向 localhost 而无法从外网访问；请求头里的地址才是真实的。
+    /// </summary>
+    public static string FrontendBase(IConfiguration configuration, string? overrideBase = null)
     {
+        if (!string.IsNullOrWhiteSpace(overrideBase))
+            return overrideBase.TrimEnd('/');
+
         var origin = (configuration["AllowedOrigins"] ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault();
         return string.IsNullOrWhiteSpace(origin) ? "http://localhost:3000" : origin.TrimEnd('/');
     }
 
+    /// <summary>从请求里推断浏览器实际访问的前端站点根地址（优先 Origin，其次 Referer）</summary>
+    public static string? ClientFrontendBase(HttpRequest request)
+    {
+        var origin = request.Headers.Origin.ToString();
+        if (!string.IsNullOrWhiteSpace(origin))
+            return origin.TrimEnd('/');
+
+        var referer = request.Headers.Referer.ToString();
+        if (!string.IsNullOrWhiteSpace(referer) &&
+            Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
+            return $"{refererUri.Scheme}://{refererUri.Authority}";
+
+        return null;
+    }
+
     /// <summary>拼出某个令牌的对外可访问链接（前端 SPA 的 /share 页面）</summary>
-    public static string BuildLink(IConfiguration configuration, string token) =>
-        $"{FrontendBase(configuration)}/share/{token}";
+    public static string BuildLink(IConfiguration configuration, string token, string? overrideBase = null) =>
+        $"{FrontendBase(configuration, overrideBase)}/share/{token}";
 
     /// <summary>
     /// 对外可访问的 API 地址。默认「前端地址 + /api」——开发环境的 Vite 代理与生产 nginx

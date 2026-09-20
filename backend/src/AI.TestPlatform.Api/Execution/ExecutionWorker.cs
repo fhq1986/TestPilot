@@ -321,6 +321,26 @@ public class ExecutionWorker : BackgroundService
         if (execution is null)
             return;
 
+        // 🔧 强制从 DB 加载 Environment——Include 在某些竞态下可能漏载，
+        // 这里用 FindAsync 确保拿到最新值，避免 Worker 运行时 BaseUrl=null
+        // （显式写全名：Environment 与 System.Environment 同名，裸写会歧义）
+        global::AI.TestPlatform.Domain.Entities.Environment? environment = null;
+        if (execution.EnvironmentId.HasValue)
+        {
+            environment = await db.Environments.FindAsync(execution.EnvironmentId.Value, ct);
+        }
+
+        // 🔍 诊断日志：确认 Environment 真的被正确载进来了
+        _logger.LogInformation(
+            "执行 {ExecutionId}: EnvironmentId={EnvId}, EnvironmentLoaded={EnvLoaded}, BaseUrl={BaseUrl}, LoginUrl={LoginUrl}, AutoLogin={AutoLogin}, PwSet={PwSet}",
+            executionId,
+            execution.EnvironmentId,
+            environment is not null,
+            environment?.BaseUrl ?? "(null)",
+            environment?.LoginUrl ?? "(null)",
+            environment?.AutoLogin,
+            !string.IsNullOrEmpty(environment?.LoginPassword));
+
         if (execution.TestCase is null)
         {
             execution.Status = ExecutionStatus.Skipped;
@@ -337,11 +357,9 @@ public class ExecutionWorker : BackgroundService
         // TestCase 已随 Include 加载，此处只需补载其 Steps 集合
         await db.Entry(execution.TestCase).Collection(t => t.Steps).LoadAsync(ct);
 
-        // 环境加载与快照（脱敏：仅名称与地址）
-        if (execution.EnvironmentId is not null)
-            await db.Entry(execution).Reference(e => e.Environment).LoadAsync(ct);
-        var environment = execution.Environment;
-        if (environment is not null)
+        // 🔧 用 FindAsync 查到的 environment（而不是 Include 可能漏载的 execution.Environment）
+        // 注意：EnvironmentSnapshot.BaseUrl 在 Migration 里 IsRequired，不能为 null！
+        if (environment is not null && !string.IsNullOrWhiteSpace(environment.BaseUrl))
             execution.EnvironmentSnapshot = new EnvironmentSnapshot
             {
                 Name = environment.Name,
@@ -366,7 +384,9 @@ public class ExecutionWorker : BackgroundService
         {
             try
             {
-                execution.Results = await runner.RunAsync(execution, environment, linked.Token,
+                // 🔧 不再直接赋值 execution.Results（会覆盖 EF 跟踪集合）；
+                // 改为先跑 RunAsync，再把返回的 result 逐个添加到 db 跟踪的集合里
+                var runResults = await runner.RunAsync(execution, environment, linked.Token,
                     onStepCompleted: async r =>
                     {
                         // 增量落库：每完成一步立即写入。执行中途刷新页面、或 SignalR 不可用走轮询时，
@@ -407,7 +427,8 @@ public class ExecutionWorker : BackgroundService
                             "StepStarted", new StepStartedDto(order, snapshot), linked.Token),
                         executionId, "StepStarted");
                     });
-                execution.Status = execution.Results.Any(r => r.Status != ExecutionStatus.Passed)
+                // 🔧 RunAsync 成功返回：用返回的列表推导 status（onStepCompleted 已增量落库）
+                execution.Status = runResults.Any(r => r.Status != ExecutionStatus.Passed)
                     ? ExecutionStatus.Failed
                     : ExecutionStatus.Passed;
             }
@@ -419,7 +440,8 @@ public class ExecutionWorker : BackgroundService
             {
                 _logger.LogError(ex, "执行 {ExecutionId} 崩溃", executionId);
                 execution.Status = ExecutionStatus.Error;
-                execution.Results.Add(new ExecutionResult
+                // 🔧 用 db.ExecutionResults.Add 确保被 EF 跟踪，SaveChanges 才能入库
+                db.ExecutionResults.Add(new ExecutionResult
                 {
                     ExecutionId = executionId,
                     StepOrder = -1,
@@ -432,8 +454,7 @@ public class ExecutionWorker : BackgroundService
             // 手动终止 → 终态 Canceled，覆盖按结果推导的 Failed。
             // 三种到达路径统一在此判定：① OCE 直接逸出；② 步骤被中断打上 Canceled 行；
             // ③ 终止发生在步骤边界，被循环顶的 Skipped 补行逻辑消化后 RunAsync 正常返回。
-            if ((linked.IsCancellationRequested && !ct.IsCancellationRequested)
-                || execution.Results.Any(r => r.Status == ExecutionStatus.Canceled))
+            if ((linked.IsCancellationRequested && !ct.IsCancellationRequested))
                 execution.Status = ExecutionStatus.Canceled;
         }
         finally

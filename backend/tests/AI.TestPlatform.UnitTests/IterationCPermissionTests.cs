@@ -19,9 +19,23 @@ namespace AI.TestPlatform.UnitTests;
 public class PermissionCatalogTests
 {
     [Fact]
-    public void 管理员拥有全部权限()
+    public void 超级管理员拥有全部权限()
     {
-        Assert.Equal(PermissionCatalog.All, PermissionCatalog.Of(UserRole.Admin));
+        Assert.Equal(PermissionCatalog.All, PermissionCatalog.Of(UserRole.SuperAdmin));
+    }
+
+    [Fact]
+    public void 管理员不含用户管理与系统设置()
+    {
+        var admin = PermissionCatalog.Of(UserRole.Admin);
+
+        // 平台级配置（用户管理 / 系统设置）收归超级管理员
+        Assert.False(admin.HasFlag(Permission.ManageUsers));
+        Assert.False(admin.HasFlag(Permission.ManageSettings));
+        // 其余权限仍保留（含定时任务与审计日志）
+        Assert.True(admin.HasFlag(Permission.ManageSchedules));
+        Assert.True(admin.HasFlag(Permission.ViewAuditLog));
+        Assert.Equal(PermissionCatalog.All & ~Permission.ManageUsers & ~Permission.ManageSettings, admin);
     }
 
     [Fact]
@@ -68,17 +82,20 @@ public class PermissionCatalogTests
     }
 
     [Fact]
-    public void 三种角色的权限严格递增()
+    public void 各角色权限逐级递增()
     {
         var viewer = PermissionCatalog.Of(UserRole.Viewer);
         var tester = PermissionCatalog.Of(UserRole.Tester);
         var admin = PermissionCatalog.Of(UserRole.Admin);
+        var superAdmin = PermissionCatalog.Of(UserRole.SuperAdmin);
 
         // 用「按位与等于自身」表达集合包含关系
         Assert.Equal(viewer, viewer & tester);
         Assert.Equal(tester, tester & admin);
+        Assert.Equal(admin, admin & superAdmin);
         Assert.NotEqual(viewer, tester);
         Assert.NotEqual(tester, admin);
+        Assert.NotEqual(admin, superAdmin);
     }
 
     [Fact]
@@ -113,6 +130,8 @@ public class PermissionCatalogTests
         Assert.Equal(0, (int)UserRole.Admin);
         Assert.Equal(1, (int)UserRole.Tester);
         Assert.Equal(2, (int)UserRole.Viewer);
+        // 超级管理员追加在末尾，不得改动既有序号
+        Assert.Equal(3, (int)UserRole.SuperAdmin);
     }
 
     [Fact]

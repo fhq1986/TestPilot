@@ -74,12 +74,12 @@
           </el-table-column>
           <el-table-column label="操作" width="270" :fixed="isMobile ? false : 'right'">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="primary" :disabled="isBuiltIn(row)" @click="openEdit(row)">编辑</el-button>
               <el-button link type="primary" @click="openReset(row)">重置密码</el-button>
-              <el-button link :type="row.isActive ? 'warning' : 'success'" @click="toggleActive(row)">
+              <el-button link :type="row.isActive ? 'warning' : 'success'" :disabled="isBuiltIn(row)" @click="toggleActive(row)">
                 {{ row.isActive ? '停用' : '启用' }}
               </el-button>
-              <el-button link type="danger" :disabled="isSelf(row)" @click="handleDelete(row)">
+              <el-button link type="danger" :disabled="isSelf(row) || isBuiltIn(row)" @click="handleDelete(row)">
                 删除
               </el-button>
             </template>
@@ -184,7 +184,7 @@ import { PermissionLabels } from '@/constants/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { formatDateTime } from '@/utils/formatter'
 import type { RoleMatrixRow, UserRoleValue, UserView } from '@/types/auth'
-import { SSO_PROVIDER_NAMES } from '@/types/auth'
+import { SSO_PROVIDER_NAMES, UserRole } from '@/types/auth'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { usePagedList } from '@/composables/usePagedList'
 
@@ -204,7 +204,9 @@ const roleOptions = [
 ]
 
 const roleTagType = (role: number) =>
-  role === 0 ? 'danger' : role === 1 ? 'primary' : 'info'
+  role === UserRole.SuperAdmin || role === UserRole.Admin
+    ? 'danger'
+    : role === UserRole.Tester ? 'primary' : 'info'
 
 const auth = useAuthStore()
 const saving = ref(false)
@@ -292,6 +294,9 @@ const matrixPermissions = computed(() =>
 )
 
 const isSelf = (row: UserView) => row.id === auth.user?.id
+
+/** 内置超级管理员：角色/状态不可改、不可删除（后端同样拦截，这里只是不给出入口） */
+const isBuiltIn = (row: UserView) => row.role === UserRole.SuperAdmin
 
 async function loadRoleCounts() {
   roleCounts.value = await userRoleCountsApi()

@@ -425,6 +425,26 @@ public class TestPlanService
         round.Error = $"轮次被手动中止（跳过 {pending.Count} 条未开始的执行）";
         await _db.SaveChangesAsync(ct);
 
+        // 🔁 同 TryCompleteRoundAsync：中止后若已无任何 Running 轮次，自动把计划转 Completed
+        var plan = await _db.TestPlans.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == round.PlanId, ct);
+        if (plan is not null && plan.Status == TestPlanStatus.Active)
+        {
+            var anyRunning = await _db.TestPlanRounds
+                .AnyAsync(r => r.PlanId == round.PlanId && r.Status == PlanRoundStatus.Running, ct);
+            if (!anyRunning)
+            {
+                var planEntity = await _db.TestPlans.FirstOrDefaultAsync(p => p.Id == round.PlanId, ct);
+                if (planEntity is not null && planEntity.Status == TestPlanStatus.Active)
+                {
+                    planEntity.Status = TestPlanStatus.Completed;
+                    await _db.SaveChangesAsync(ct);
+                    _logger.LogInformation("计划 {PlanId}（{PlanName}）因最后一轮被中止，自动转态为 Completed",
+                        round.PlanId, planEntity.Name);
+                }
+            }
+        }
+
         _logger.LogInformation("轮次 {RoundId} 已中止，跳过 {Count} 条执行", roundId, pending.Count);
         return (true, pending.Count, null);
     }
@@ -448,6 +468,28 @@ public class TestPlanService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("轮次 {RoundId}（第 {RoundNo} 轮）已完成", roundId, round.RoundNo);
+
+        // 🔁 自动转态：如果计划下已无任何 Running 轮次，且计划状态还是 Active，→ 转 Completed
+        // （有 "标记完成" 手动按钮兜底，这里只处理"全部轮次跑完"的自然收敛）
+        var plan = await _db.TestPlans.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == round.PlanId, ct);
+        if (plan is not null && plan.Status == TestPlanStatus.Active)
+        {
+            var anyRunning = await _db.TestPlanRounds
+                .AnyAsync(r => r.PlanId == round.PlanId && r.Status == PlanRoundStatus.Running, ct);
+            if (!anyRunning)
+            {
+                var planEntity = await _db.TestPlans.FirstOrDefaultAsync(p => p.Id == round.PlanId, ct);
+                if (planEntity is not null && planEntity.Status == TestPlanStatus.Active)
+                {
+                    planEntity.Status = TestPlanStatus.Completed;
+                    await _db.SaveChangesAsync(ct);
+                    _logger.LogInformation("计划 {PlanId}（{PlanName}）所有轮次已结束，自动转态为 Completed",
+                        round.PlanId, planEntity.Name);
+                }
+            }
+        }
+
         return round.PlanId;
     }
 
