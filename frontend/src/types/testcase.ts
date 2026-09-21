@@ -286,6 +286,8 @@ export interface TestCaseSummary {
   latestExecutionStatus?: number | null
   /** 最近一次执行的时间 */
   lastExecutedAt?: string | null
+  /** 创建人显示名（M8 审计字段；历史行可能为空） */
+  createdByName?: string | null
   name: string
   type: TestType
   description?: string | null

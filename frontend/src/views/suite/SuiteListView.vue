@@ -71,6 +71,15 @@
               <span v-else class="sub-text">—</span>
             </template>
           </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="170">
+            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="280" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" :loading="runningId === row.id" @click="openRun(row)">运行</el-button>

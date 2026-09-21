@@ -46,12 +46,38 @@ public record ImportSwaggerResponse(
 public record AnalyzeApiFlowRequest(List<Dictionary<string, object>> Endpoints);
 
 public record FailedStepEvidence(
-    int StepOrder, string ActionType, string? ErrorMessage, string? Log, StepConfig? StepSnapshot);
+    int StepOrder, string ActionType, string? ErrorMessage, string? Log, StepConfig? StepSnapshot,
+    /// <summary>M8：失败时的页面可交互元素快照（jsonb 原样带出），供归因产出具体定位符</summary>
+    string? Elements = null);
 
 public record SimilarCaseEvidence(int StepOrder, string ActionType, string ErrorMessage);
 
 public record DiagnosisResultDto(
     string Category, string RootCause, float Confidence, string SuggestedFix, bool RetryRecommended);
+
+// ---------------------------------------------------------------- M8 Agent 自愈闭环（见 docs/m8-agent-design.md）
+
+/// <summary>
+/// 一条结构化修复动作。ActionType 取自白名单
+/// （update_locator / wait_strategy / step_config_patch / add_step / delete_step / reorder_step / relax_assert）。
+/// </summary>
+public record FixActionDto(
+    string ActionType, int? StepOrder,
+    Dictionary<string, object> Params, float Confidence);
+
+/// <summary>
+/// Attributer 的结构化归因结果。
+/// ⚠ 下游判定**一律以 <see cref="FixCategory"/> 为准**；<see cref="Category"/> 仅作人类可读展示与兼容。
+/// </summary>
+public record AttributedResultDto(
+    string Category, string RootCause, float Confidence,
+    string SuggestedFix, bool RetryRecommended,
+    FixCategory FixCategory, IReadOnlyList<FixActionDto> ProposedFixes,
+    bool NeedsHumanApproval, string? ApprovalReason);
+
+/// <summary>Planner（Phase 3）的输出：步骤序列 + 整体置信度 + 识别到的风险点。</summary>
+public record PlanResultDto(
+    IReadOnlyList<GeneratedCaseDto> Cases, float OverallConfidence, IReadOnlyList<string> Risks);
 
 // WebhookTriggerRequest 已迁移至 Application/CI/CiDtos.cs（CI 集成扩展了项目/模块筛选与构建上下文）
 

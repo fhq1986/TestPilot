@@ -5,6 +5,7 @@ using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Application.TestPlans;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
+using AI.TestPlatform.Api.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,7 @@ public static class TestPlanApiExtensions
             [FromQuery] Guid? ownerId = null,
             [FromQuery] string? releaseName = null,
             [FromQuery] string? search = null,
+            [FromQuery] Guid? requirementId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
@@ -40,6 +42,7 @@ public static class TestPlanApiExtensions
                 var keyword = search.Trim();
                 query = query.Where(p => p.Name.Contains(keyword));
             }
+            if (requirementId is not null) query = query.Where(p => p.RequirementId == requirementId);
 
             var total = await query.CountAsync(ct);
             var items = await query
@@ -59,12 +62,18 @@ public static class TestPlanApiExtensions
                     CaseCount = p.Items.Count,
                     p.LastRoundAt, p.LastCreatedCount, p.LastError,
                     p.CreatedAt, p.UpdatedAt,
+                    p.CreatedById,
+                    // 关联需求
+                    p.RequirementId,
+                    RequirementTitle = p.Requirement != null ? p.Requirement.Title : null,
                 })
                 .ToListAsync(ct);
 
             var ids = items.Select(i => i.Id).ToList();
             var lastRounds = await LoadLastRoundStatsAsync(db, ids, ct);
             var running = await LoadRunningRoundAsync(db, ids, ct);
+            // 创建人显示名（M8 审计字段）：本页一次批量解析
+            var creatorNames = await UserNameResolver.ResolveAsync(db, items.Select(p => p.CreatedById), ct);
 
             var dtos = items.Select(p =>
             {
@@ -84,7 +93,9 @@ public static class TestPlanApiExtensions
                     p.LastRoundAt,
                     hasLast ? last.RoundNo : null,
                     hasLast ? last.PassRate : null,
-                    p.LastError, p.CreatedAt, p.UpdatedAt);
+                    p.LastError, p.CreatedAt, p.UpdatedAt,
+                    creatorNames.GetName(p.CreatedById),
+                    p.RequirementId, p.RequirementTitle);
             }).ToList();
 
             return Results.Ok(new PagedResult<TestPlanSummaryDto>(dtos, total, page, pageSize));
@@ -120,6 +131,7 @@ public static class TestPlanApiExtensions
                 .Include(p => p.Project)
                 .Include(p => p.Owner)
                 .Include(p => p.Environment)
+                .Include(p => p.Requirement)
                 .Include(p => p.Items)
                 .FirstOrDefaultAsync(p => p.Id == id, ct);
             if (plan is null) return Results.NotFound();
@@ -140,7 +152,8 @@ public static class TestPlanApiExtensions
                 plan.EnvironmentId, plan.Environment?.Name,
                 plan.Browsers ?? [], plan.ExpandDataSets,
                 plan.Items.Count, roundCount, schedules, issues,
-                plan.CreatedAt, plan.UpdatedAt));
+                plan.CreatedAt, plan.UpdatedAt,
+                plan.RequirementId, plan.Requirement?.Title));
         }).WithPermission(Permission.ViewTestPlans);
 
         // ---------------------------------------------------------------- CRUD
@@ -179,6 +192,7 @@ public static class TestPlanApiExtensions
                 EnvironmentId = request.EnvironmentId,
                 Browsers = NormalizeBrowsers(request.Browsers),
                 ExpandDataSets = request.ExpandDataSets ?? true,
+                RequirementId = request.RequirementId,
             };
 
             // ⚠️ 顺序不能反：必须先 Add 主行再写明细。
@@ -225,6 +239,7 @@ public static class TestPlanApiExtensions
             plan.EnvironmentId = request.EnvironmentId;
             plan.Browsers = NormalizeBrowsers(request.Browsers);
             plan.ExpandDataSets = request.ExpandDataSets ?? plan.ExpandDataSets;
+            plan.RequirementId = request.RequirementId;
             plan.UpdatedAt = DateTime.UtcNow;
 
             await db.SaveChangesAsync(ct);
@@ -285,6 +300,7 @@ public static class TestPlanApiExtensions
                 EnvironmentId = source.EnvironmentId,
                 Browsers = source.Browsers,
                 ExpandDataSets = source.ExpandDataSets,
+                RequirementId = source.RequirementId,
             };
             var order = 0;
             foreach (var item in source.Items.OrderBy(i => i.Order))
@@ -493,10 +509,13 @@ public static class TestPlanApiExtensions
     {
         if (planIds.Count == 0) return new();
 
-        var planSettings = await db.TestPlans.AsNoTracking()
+        var planRows = await db.TestPlans.AsNoTracking()
             .Where(p => planIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.ExcludeFlakyFromFailure })
-            .ToDictionaryAsync(p => p.Id, p => p.ExcludeFlakyFromFailure, ct);
+            .Select(p => new { p.Id, p.ExcludeFlakyFromFailure, TreatAgentHealed = p.Project.TreatAgentHealedAsPass })
+            .ToListAsync(ct);
+        var planSettings = planRows.ToDictionary(p => p.Id, p => p.ExcludeFlakyFromFailure);
+        // Agent 自愈通过是否计入达标（项目级，默认不计入）——与轮次页/达标判定同口径
+        var treatByPlan = planRows.ToDictionary(p => p.Id, p => p.TreatAgentHealed);
 
         var rounds = await db.TestPlanRounds.AsNoTracking()
             .Where(r => planIds.Contains(r.PlanId) && r.Status != PlanRoundStatus.Running)
@@ -515,6 +534,7 @@ public static class TestPlanApiExtensions
             {
                 RoundId = e.PlanRoundId!.Value,
                 e.Status,
+                e.AgentHealed,
                 IsFlaky = e.TestCase != null && e.TestCase.IsFlaky,
             })
             .ToListAsync(ct);
@@ -532,8 +552,10 @@ public static class TestPlanApiExtensions
                 rows.Count(x => x.Status == ExecutionStatus.Skipped),
                 0,
                 rows.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Failed),
-                rows.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Error));
-            result[planId] = (round.RoundNo, TestPlanService.ToStats(counts, excludeFlaky).PassRate);
+                rows.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Error),
+                PassedViaAgent: rows.Count(x => x.AgentHealed && x.Status == ExecutionStatus.Passed));
+            result[planId] = (round.RoundNo,
+                TestPlanService.ToStats(counts, excludeFlaky, treatByPlan.GetValueOrDefault(planId)).PassRate);
         }
         return result;
     }

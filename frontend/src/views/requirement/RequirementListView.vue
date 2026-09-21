@@ -72,6 +72,24 @@
           <el-table-column prop="priority" label="优先级" width="80">
             <template #default="{ row }">{{ row.priority || '—' }}</template>
           </el-table-column>
+          <el-table-column label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.status !== undefined" :type="statusTagType(row.status)" size="small"
+                effect="light">{{ REQUIREMENT_STATUS_LABELS[row.status] ?? '—' }}</el-tag>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="关联计划" width="110" align="center">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.linkedPlanCount > 0" content="点击查看关联的测试计划" placement="top">
+                <el-tag size="small" type="warning" effect="plain" class="clickable-tag"
+                  @click.stop="openPlansForRequirement(row)">
+                  {{ row.linkedPlanCount }}
+                </el-tag>
+              </el-tooltip>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="externalKey" label="外部编号" width="140" show-overflow-tooltip>
             <template #default="{ row }">{{ row.externalKey || '—' }}</template>
           </el-table-column>
@@ -95,6 +113,12 @@
             <template #default="{ row }">
               <span v-if="row.caseCount > 0">{{ row.passedCaseCount }} / {{ row.caseCount }}</span>
               <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column label="创建时间" width="160">
@@ -166,7 +190,7 @@
     </el-card>
 
     <!-- 新建/编辑 -->
-    <el-dialog v-model="formVisible" :title="editingId ? '编辑需求' : '新建需求'" width="80%">
+    <el-dialog v-model="formVisible" :title="editingId ? '编辑需求' : '新建需求'" width="80%" top="2vh">
       <el-form label-width="90px">
         <el-form-item label="项目" required>
           <el-select v-model="form.projectId" filterable :disabled="!!editingId" style="width: 100%">
@@ -176,14 +200,54 @@
         <el-form-item label="标题" required>
           <el-input v-model="form.title" maxlength="300" show-word-limit placeholder="如：用户登录-密码错误提示" />
         </el-form-item>
-        <el-form-item label="优先级">
+        
+        <el-form-item label="外部编号">
+          <el-input v-model="form.externalKey" maxlength="200" placeholder="外部需求系统的标识（对接预留）" />
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="计划开始" label-width="90px">
+              <el-date-picker v-model="form.planStartDate" type="date" value-format="YYYY-MM-DD"
+                placeholder="可选" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="计划完成" label-width="90px">
+              <el-date-picker v-model="form.planEndDate" type="date" value-format="YYYY-MM-DD"
+                placeholder="可选" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="实际开始" label-width="90px">
+              <el-date-picker v-model="form.actualStartDate" type="date" value-format="YYYY-MM-DD"
+                placeholder="可选" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="实际完成" label-width="90px">
+              <el-date-picker v-model="form.actualEndDate" type="date" value-format="YYYY-MM-DD"
+                placeholder="可选" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+           <el-row :gutter="16">
+          <el-col :span="12">
+        <el-form-item label="状态">
+          <el-select v-model="form.status" style="width: 160px">
+            <el-option v-for="(label, val) in REQUIREMENT_STATUS_LABELS" :key="val" :label="label" :value="Number(val)" />
+          </el-select>
+        </el-form-item>
+        </el-col>
+         <el-col :span="12">
+<el-form-item label="优先级">
           <el-select v-model="form.priority" clearable style="width: 160px" placeholder="P0 / P1 / P2">
             <el-option v-for="p in ['P0', 'P1', 'P2']" :key="p" :label="p" :value="p" />
           </el-select>
         </el-form-item>
-        <el-form-item label="外部编号">
-          <el-input v-model="form.externalKey" maxlength="200" placeholder="外部需求系统的标识（对接预留）" />
-        </el-form-item>
+         </el-col>
+        </el-row>
         <el-form-item label="说明">
           <RichTextEditor v-model="form.description" :height="200" placeholder="验收要点、来源文档链接等（可粘贴或拖入图片）" />
         </el-form-item>
@@ -203,15 +267,17 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProjects } from '@/api/project'
 import {
-  batchDeleteRequirements, createRequirement, deleteRequirement, getRequirementCoverage, getRequirements,
-  updateRequirement,
+  batchDeleteRequirements, createRequirement, deleteRequirement,
+  getRequirementCoverage, getRequirements, updateRequirement,
 } from '@/api/requirement'
 import RichTextEditor from '@/components/common/RichTextEditor.vue'
 import { useAuthStore } from '@/stores/auth'
 import { Permission } from '@/constants/permissions'
 import { formatDateTime } from '@/utils/formatter'
 import type { Project } from '@/types/project'
-import type { RequirementListItem, RequirementPayload } from '@/types/requirement'
+import {
+  REQUIREMENT_STATUS_LABELS, RequirementStatus, type RequirementListItem, type RequirementPayload,
+} from '@/types/requirement'
 import MobileCardList from '@/components/common/MobileCardList.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { usePagedList } from '@/composables/usePagedList'
@@ -224,8 +290,20 @@ const { isMobile } = useBreakpoint()
 const authStore = useAuthStore()
 const router = useRouter()
 
+const statusTagType = (status: number) =>
+  status === RequirementStatus.NotStarted ? 'info'
+    : status === RequirementStatus.InProgress ? 'warning'
+      : status === RequirementStatus.Completed ? 'success' : 'info'
+
 const projects = ref<Project[]>([])
 const coverage = ref<Awaited<ReturnType<typeof getRequirementCoverage>> | null>(null)
+
+const openPlansForRequirement = (row: RequirementListItem) => {
+  void router.push({
+    path: '/test-plans',
+    query: { requirementId: row.id, projectId: row.projectId },
+  })
+}
 
 const filters = ref<{ projectId?: string; search?: string }>({})
 
@@ -272,7 +350,9 @@ const loadProjects = async () => {
 const formVisible = ref(false)
 const saving = ref(false)
 const editingId = ref<string | null>(null)
-const form = ref<RequirementPayload & { projectId?: string }>({ title: '' })
+const form = ref<RequirementPayload & { projectId?: string }>({
+  title: '', status: RequirementStatus.NotStarted,
+})
 
 const openCreate = () => {
   editingId.value = null
@@ -282,6 +362,9 @@ const openCreate = () => {
     description: '',
     externalKey: '',
     priority: '',
+    planStartDate: null, planEndDate: null,
+    actualStartDate: null, actualEndDate: null,
+    status: RequirementStatus.NotStarted,
   }
   formVisible.value = true
 }
@@ -294,6 +377,11 @@ const openEdit = async (row: RequirementListItem) => {
     description: row.description ?? '',
     externalKey: row.externalKey ?? '',
     priority: row.priority ?? '',
+    planStartDate: row.planStartDate ?? null,
+    planEndDate: row.planEndDate ?? null,
+    actualStartDate: row.actualStartDate ?? null,
+    actualEndDate: row.actualEndDate ?? null,
+    status: row.status ?? RequirementStatus.NotStarted,
   }
   formVisible.value = true
 }
@@ -314,6 +402,11 @@ const submitForm = async () => {
       description: form.value.description || null,
       externalKey: form.value.externalKey || null,
       priority: form.value.priority || null,
+      planStartDate: form.value.planStartDate ?? null,
+      planEndDate: form.value.planEndDate ?? null,
+      actualStartDate: form.value.actualStartDate ?? null,
+      actualEndDate: form.value.actualEndDate ?? null,
+      status: form.value.status ?? null,
     }
     if (editingId.value) {
       await updateRequirement(editingId.value, payload)

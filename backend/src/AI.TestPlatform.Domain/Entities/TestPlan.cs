@@ -52,6 +52,10 @@ public class TestPlan
     public Guid? OwnerId { get; set; }
     public User? Owner { get; set; }
 
+    /// <summary>关联的需求（一个计划可对应一个需求，多计划对应同一需求由 TestPlans nav prop 反向承载）</summary>
+    public Guid? RequirementId { get; set; }
+    public Requirement? Requirement { get; set; }
+
     // ------------------------------ 质量目标
     /// <summary>目标通过率（0-1）。达标判定：实际通过率 >= 该值</summary>
     public double TargetPassRate { get; set; } = 0.95;
@@ -86,7 +90,12 @@ public class TestPlan
     public List<TestPlanItem> Items { get; set; } = new();
     public List<TestPlanRound> Rounds { get; set; } = new();
 
+    // ------------------------------ 审计字段（由 TestDbContext 统一盖章）
+    /// <summary>创建人</summary>
+    public Guid? CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>最后修改人</summary>
+    public Guid? UpdatedById { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
 

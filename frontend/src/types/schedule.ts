@@ -23,6 +23,8 @@ export interface ScheduleSummary {
   scopeKind: ScheduleScopeKindValue
   /** 范围为测试计划时，引用的计划（含名称，供列表直接展示） */
   testPlans?: SchedulePlanRef[] | null
+  /** 创建人显示名（M8 审计字段；历史行可能为空） */
+  createdByName?: string | null
 }
 
 export interface ScheduleDetail extends Omit<ScheduleSummary, 'testCaseCount'> {

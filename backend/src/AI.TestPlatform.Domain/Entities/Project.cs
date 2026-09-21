@@ -30,6 +30,23 @@ public class Project
     public Guid? DeveloperOwnerId { get; set; }
     public User? DeveloperOwner { get; set; }
 
+    // ---------------- M8 Agent 自愈闭环（项目级开关，系统级总开关在 SystemConfig）
+    /// <summary>是否对该项目启用 Agent 失败自愈闭环。默认关；须与系统级总开关同时开启才生效</summary>
+    public bool AgentLoopEnabled { get; set; }
+
+    /// <summary>Agent 自愈熔断冷却时间：连续多次自愈仍失败后由 AgentHealCircuitBreaker 置位，冷却期内不再自愈</summary>
+    public DateTime? AgentLoopSuspendedAt { get; set; }
+
+    /// <summary>
+    /// Agent 自愈"通过"是否计入达标判定。默认 false——避免"改松断言/删步骤即通过"污染验收质量数据。
+    /// 为 true 时才把 AgentHealed 的执行算作达标通过。
+    /// </summary>
+    public bool TreatAgentHealedAsPass { get; set; }
+
+    // ------------------------------ 审计字段（由 TestDbContext 统一盖章）
+    /// <summary>最后修改人（创建人见 CreatedById）</summary>
+    public Guid? UpdatedById { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public List<TestCase> TestCases { get; set; } = new();

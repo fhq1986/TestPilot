@@ -3,8 +3,10 @@ using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Application.Requirements;
 using AI.TestPlatform.Domain.Entities;
+using AI.TestPlatform.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AI.TestPlatform.Api.Modules.Requirements;
 
@@ -41,6 +43,30 @@ public static class RequirementApiExtensions
         {
             var requirement = await requirements.GetAsync(id, ct);
             return requirement is null ? Results.NotFound() : Results.Ok(requirement);
+        }).WithPermission(Permission.ViewTestCases);
+
+        // 查看某个需求关联的所有测试计划（需求列表页"关联计划"列点击展开用）
+        group.MapGet("/{id:guid}/plans", async (
+            Guid id, TestDbContext db, CancellationToken ct) =>
+        {
+            var plans = await db.TestPlans.AsNoTracking()
+                .Where(p => p.RequirementId == id)
+                .Select(p => new
+                {
+                    p.Id, p.Name, p.ReleaseName, p.Status, p.LastRoundAt,
+                })
+                .OrderByDescending(p => p.LastRoundAt ?? DateTime.MinValue)
+                .ThenByDescending(p => p.Id)
+                .ToListAsync(ct);
+
+            var dtos = plans.Select(p => new RequirementPlanRefDto(
+                PlanId: p.Id,
+                PlanName: p.Name,
+                ReleaseName: p.ReleaseName,
+                Status: p.Status,
+                LastRoundAt: p.LastRoundAt)).ToList();
+
+            return Results.Ok(dtos);
         }).WithPermission(Permission.ViewTestCases);
 
         group.MapPost("/", async (

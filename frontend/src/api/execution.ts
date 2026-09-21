@@ -1,5 +1,7 @@
 import request from './request'
-import type { ExecutionDetail, ExecutionSummary, ExecutionStatus } from '@/types/execution'
+import type {
+  AgentApprovalItem, AgentAttempt, ExecutionDetail, ExecutionSummary, ExecutionStatus,
+} from '@/types/execution'
 import type { ExecutionDefectLink } from '@/types/defect'
 import type { PagedResult } from '@/types/project'
 import type { BatchDeleteResult } from '@/types/common'
@@ -26,6 +28,26 @@ export const getExecution = (id: string) => request.get<unknown, ExecutionDetail
 /** 该执行里已经转成缺陷的步骤（执行详情页「缺陷」列据此避免重复转单） */
 export const getExecutionDefectLinks = (executionId: string) =>
   request.get<unknown, ExecutionDefectLink[]>(`/executions/${executionId}/defect-links`)
+
+/** M8 Agent 修复轨迹（无自愈记录时返回空数组） */
+export const getAgentAttempts = (executionId: string) =>
+  request.get<unknown, AgentAttempt[]>(`/executions/${executionId}/agent-attempts`)
+
+/** M8 Agent 审批工作台列表（status 不传 = 全部） */
+export const getAgentApprovals = (params: {
+  status?: 'pending' | 'approved' | 'rejected'
+  page?: number
+  pageSize?: number
+}) =>
+  request.get<unknown, PagedResult<AgentApprovalItem>>('/executions/agent-approvals', { params })
+
+/** 采纳一次待审批修复（应用到真实用例步骤） */
+export const approveAgentAttempt = (attemptId: string) =>
+  request.post<unknown, { applied: number }>(`/executions/agent-attempts/${attemptId}/approve`)
+
+/** 驳回一次待审批修复（不改动用例） */
+export const rejectAgentAttempt = (attemptId: string) =>
+  request.post<unknown, void>(`/executions/agent-attempts/${attemptId}/reject`)
 
 export const createExecution = (data: {
   testCaseId: string

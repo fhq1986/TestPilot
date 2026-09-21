@@ -21,6 +21,7 @@ export const listTestPlansApi = (params?: {
   ownerId?: string
   releaseName?: string
   search?: string
+  requirementId?: string
   page?: number
   pageSize?: number
 }) => request.get<unknown, PagedResult<TestPlanSummary>>('/test-plans', { params })

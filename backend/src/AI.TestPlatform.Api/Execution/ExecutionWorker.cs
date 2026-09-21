@@ -499,6 +499,23 @@ public class ExecutionWorker : BackgroundService
         await TryPushAsync(() => _hub.Clients.Group(group).SendAsync(
             "StatusChanged", (int)execution.Status, CancellationToken.None), executionId, "StatusChanged");
 
+        // M8：失败执行的 Agent 自愈闭环。
+        // 位置刻意在「终态回写之后、下游 Passed 判定逻辑之前」——自愈成功会把状态改写为 Passed，
+        // 从而让随后的套件结算 / 缺陷自动验证 / 用例激活按"通过"处理（与设计 §4.3 一致）。
+        // 开关（系统级 + 项目级双层与门）与场景跳过（Suite/CI）都在服务内部判定，此处仅按状态触发。
+        if (execution.Status is ExecutionStatus.Failed or ExecutionStatus.Error)
+        {
+            try
+            {
+                var agentLoop = scope.ServiceProvider.GetRequiredService<AgentLoopService>();
+                await agentLoop.RunAsync(executionId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "执行 {ExecutionId} 的 Agent 自愈闭环异常", executionId);
+            }
+        }
+
         // 执行编排：本条刚落地，立刻结算同一批次里在等它的执行
         // （前置未通过 → 跳过；快停策略 → 收尾剩余待执行）。放在通知之前是为了让下游尽快解锁。
         if (execution.SuiteRunId is { } suiteRunId)

@@ -44,7 +44,9 @@ public record ExecutionSummaryDto(
     // 迭代 F：执行录像（仅失败时保留，可在 Playwright trace viewer 里逐步回放 DOM 与网络）
     string? VideoUrl = null, long? VideoSizeBytes = null,
     // 迭代 G：所属项目名（列表跨项目展示时不用再 JOIN）
-    string? ProjectName = null);
+    string? ProjectName = null,
+    // M8 Agent 自愈：是否由 Agent 自愈后通过（列表打「自愈通过」标记）
+    bool AgentHealed = false);
 
 public record ExecutionResultDto(
     Guid Id, int StepOrder, ExecutionStatus Status, int? DurationMs,
@@ -82,7 +84,26 @@ public record ExecutionDetailDto(
     // 所属项目名（详情页展示用；透过用例的 Project 导航取）
     string? ProjectName = null,
     // 迭代 F：执行录像（仅失败时保留）
-    string? VideoUrl = null, long? VideoSizeBytes = null);
+    string? VideoUrl = null, long? VideoSizeBytes = null,
+    // M8 Agent 自愈闭环（详见 docs/m8-agent-design.md §4.3）
+    bool AgentHealed = false,
+    /// <summary>执行级最终结论（AgentAttemptResult? 的 int 值）：0=Fixed 2=Failed 3=BudgetExhausted …</summary>
+    int? AgentFinalVerdict = null,
+    int AgentLoopCount = 0,
+    int AgentBudgetUsed = 0);
+
+/// <summary>
+/// M8 Agent 修复轨迹（执行详情页「Agent 修复轨迹」展示）。
+/// FixCategory / Result 以 int 返回（与项目其他枚举一致，前端做文案映射）。
+/// </summary>
+public record AgentAttemptDto(
+    Guid Id, int AttemptNumber, int TargetStepOrder,
+    int FixCategory, float Confidence, string? FixSummary,
+    bool AppliedSuccessfully, string? AppliedActions,
+    int Result, string? FailureAfterFix,
+    bool NeedsApproval, bool? Approved,
+    int LlmInputTokens, int LlmOutputTokens, string? LlmModel,
+    DateTime CreatedAt, DateTime? CompletedAt);
 
 public static class ExecutionMappingExtensions
 {
@@ -104,7 +125,7 @@ public static class ExecutionMappingExtensions
         e.TriggerSource, e.CommitSha, e.Branch, e.BuildNumber,
         e.BrowserName, e.DataSetRowLabel, e.SuiteId, e.SuiteRunId,
         TraceApiUrl(e), e.TraceSizeBytes, e.DependsOnTestCaseId, e.SkipReason,
-        VideoApiUrl(e), e.VideoSizeBytes);
+        VideoApiUrl(e), e.VideoSizeBytes, null, e.AgentHealed);
 
     public static ExecutionDetailDto ToDetailDto(this Execution e, string testCaseName) => new(
         e.Id, e.TestCaseId, testCaseName, e.Status, e.TriggerType, e.BrowserVersion,
@@ -116,11 +137,29 @@ public static class ExecutionMappingExtensions
         TraceApiUrl(e), e.TraceSizeBytes, e.StepRetryCount, e.DependsOnTestCaseId, e.SkipReason,
         e.TotalSteps,
         e.TestCase?.Project?.Name,
-        VideoApiUrl(e), e.VideoSizeBytes);
+        VideoApiUrl(e), e.VideoSizeBytes,
+        e.AgentHealed, e.AgentFinalVerdict is null ? null : (int)e.AgentFinalVerdict,
+        e.AgentLoopCount, e.AgentBudgetUsed);
 
     public static ExecutionResultDto ToDto(this ExecutionResult r) => new(
         r.Id, r.StepOrder, r.Status, r.DurationMs, r.ScreenshotUrl, r.Log,
         r.ErrorMessage, r.StackTrace, r.StepSnapshot, r.TestStepId,
         r.StepActionType,
         r.VisualStatus, r.VisualDiffRatio, r.BaselineImageUrl, r.DiffImageUrl, r.VisualNote);
+
+    /// <summary>M8 Agent 修复轨迹 DTO</summary>
+    public static AgentAttemptDto ToDto(this AgentAttempt a) => new(
+        a.Id, a.AttemptNumber, a.TargetStepOrder,
+        (int)a.FixCategory, a.Confidence, a.FixSummary,
+        a.AppliedSuccessfully, a.AppliedActions,
+        (int)a.Result, a.FailureAfterFix,
+        a.NeedsApproval, a.Approved,
+        a.LlmInputTokens, a.LlmOutputTokens, a.LlmModel,
+        a.CreatedAt, a.CompletedAt);
 }
+
+/// <summary>M8 Agent 审批工作台列表项（跨执行，带用例/执行上下文）</summary>
+public record AgentApprovalItemDto(
+    Guid AttemptId, Guid ExecutionId, string TestCaseName,
+    int TargetStepOrder, int FixCategory, float Confidence, string? FixSummary,
+    bool? Approved, Guid? ApprovedBy, DateTime? ApprovedAt, int Result, DateTime CreatedAt);

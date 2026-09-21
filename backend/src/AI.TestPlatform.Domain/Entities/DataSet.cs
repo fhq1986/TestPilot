@@ -28,6 +28,11 @@ public class DataSet
     /// <summary>是否把首行当作示例/表头说明（仅影响界面提示，不参与执行）</summary>
     public bool FirstRowIsSample { get; set; }
 
+    // ------------------------------ 审计字段（由 TestDbContext 统一盖章）
+    /// <summary>创建人</summary>
+    public Guid? CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>最后修改人</summary>
+    public Guid? UpdatedById { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

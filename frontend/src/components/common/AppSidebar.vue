@@ -117,6 +117,7 @@ const menus: MenuItem[] = [
   { path: '/projects', title: '项目管理', icon: Folder, permission: Permission.ViewProjects },
   { path: '/testcases', title: '测试用例', icon: Document, permission: Permission.ViewTestCases },
   { path: '/executions', title: '执行记录', icon: VideoPlay, permission: Permission.ViewExecutions },
+  { path: '/agent-approvals', title: 'Agent 审批', icon: MagicStick, permission: Permission.ManageTestCases },
   { path: '/nodes', title: '执行节点', icon: Monitor, permission: Permission.ViewExecutions },
   { path: '/schedules', title: '定时任务', icon: Timer, permission: Permission.ManageSchedules },
   { path: '/suites', title: '测试套件', icon: Collection, permission: Permission.ViewTestCases },

@@ -32,6 +32,9 @@ public class SharedStepGroup
 
     public Guid? CreatedById { get; set; }
 
+    // ------------------------------ 审计字段（由 TestDbContext 统一盖章）
+    /// <summary>最后修改人（创建人见 CreatedById）</summary>
+    public Guid? UpdatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 }

@@ -23,7 +23,12 @@ public record TestPlanSummaryDto(
     int? RunningRoundNo, int? RunningCaseCount, int? RunningPassedCount,
     DateTime? LastRoundAt, int? LastRoundNo, double? LastPassRate,
     string? LastError,
-    DateTime CreatedAt, DateTime? UpdatedAt);
+    DateTime CreatedAt, DateTime? UpdatedAt,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null,
+    // ------------------------------ 关联需求
+    Guid? RequirementId = null,
+    string? RequirementTitle = null);
 
 public record TestPlanDetailDto(
     Guid Id, Guid ProjectId,
@@ -42,7 +47,8 @@ public record TestPlanDetailDto(
     IReadOnlyList<PlanScheduleRefDto>? Schedules,
     /// <summary>范围体检结果：不可执行的用例（已删除 / 移动端 / 无步骤）</summary>
     IReadOnlyList<PlanScopeIssueDto> ScopeIssues,
-    DateTime CreatedAt, DateTime? UpdatedAt);
+    DateTime CreatedAt, DateTime? UpdatedAt,
+    Guid? RequirementId = null, string? RequirementTitle = null);
 
 /// <summary>范围体检发现的问题。提测前突击编排时最需要它</summary>
 public record PlanScopeIssueDto(string Level, string Kind, Guid? TestCaseId, string Name, string Message);
@@ -72,7 +78,8 @@ public record CreateTestPlanRequest(
     bool? ExcludeFlakyFromFailure = null, PlanGateMode? GateMode = null,
     bool? DefectGateEnabled = null,
     Guid? EnvironmentId = null, List<string>? Browsers = null, bool? ExpandDataSets = null,
-    List<Guid>? TestCaseIds = null);
+    List<Guid>? TestCaseIds = null,
+    Guid? RequirementId = null);
 
 public record UpdateTestPlanRequest(
     string Name, string? Description = null,
@@ -82,7 +89,8 @@ public record UpdateTestPlanRequest(
     double? TargetPassRate = null, bool? AllowErrors = null,
     bool? ExcludeFlakyFromFailure = null, PlanGateMode? GateMode = null,
     bool? DefectGateEnabled = null,
-    Guid? EnvironmentId = null, List<string>? Browsers = null, bool? ExpandDataSets = null);
+    Guid? EnvironmentId = null, List<string>? Browsers = null, bool? ExpandDataSets = null,
+    Guid? RequirementId = null);
 
 public record SetPlanItemsRequest(List<Guid> TestCaseIds);
 
@@ -108,8 +116,13 @@ public record PlanStatsDto(
     /// <summary>参与判定的样本数 = Total − Skipped（被排除的 flaky 也已扣除），
     /// 因此恒有 <c>Total == Passed + Failed + Error</c></summary>
     int Total,
+    /// <summary>计入达标的通过数：<c>PassedNative + (TreatAgentHealedAsPass ? PassedViaAgent : 0)</c></summary>
     int Passed, int Failed, int Error, int Skipped, int Pending,
-    double PassRate);
+    double PassRate,
+    /// <summary>其中「原生通过」（非 Agent 自愈）的条数</summary>
+    int PassedNative = 0,
+    /// <summary>其中「Agent 自愈通过」的条数（默认不计入达标，见 Project.TreatAgentHealedAsPass）</summary>
+    int PassedViaAgent = 0);
 
 public record PlanRoundSummaryDto(
     Guid Id, int RoundNo, PlanRoundStatus Status,

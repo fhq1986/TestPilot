@@ -50,6 +50,11 @@ public class Schedule
     public int LastCreatedCount { get; set; }
     public string? LastError { get; set; }
 
+    // ------------------------------ 审计字段（由 TestDbContext 统一盖章）
+    /// <summary>创建人</summary>
+    public Guid? CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>最后修改人</summary>
+    public Guid? UpdatedById { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

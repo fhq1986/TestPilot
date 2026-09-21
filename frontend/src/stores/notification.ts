@@ -67,6 +67,10 @@ export const useNotificationStore = defineStore('notification', {
         if (bucket) bucket.count = Math.max(0, bucket.count - 1)
       }
       await readNotification(id)
+      // 关键：再拉一次**权威**未读数。消息中心页面的列表与弹层的 recent 不共用，
+      // 若被标记的消息不在 recent 里，上面的本地自减就不会发生——
+      // 表现为"标了已读但未读统计不动"（真实 bug）。以服务端为准最稳。
+      await this.refreshUnread()
     },
 
     async markAllRead(category?: number) {
@@ -80,6 +84,8 @@ export const useNotificationStore = defineStore('notification', {
         this.unread.byCategory = this.unread.byCategory.filter((c) => c.category !== category)
         this.recent = this.recent.map((n) => (n.category === category ? { ...n, isRead: true } : n))
       }
+      // 同样以服务端为准（本轮 superadmin 可能作用于全部用户，本地推算会不准）
+      await this.refreshUnread()
     },
 
     /**

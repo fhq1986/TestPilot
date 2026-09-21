@@ -16,10 +16,12 @@ public class PlanRoundConflictException(string message) : Exception(message);
 /// </summary>
 public record RoundCounts(
     int Total, int Passed, int Failed, int Error, int Skipped, int Pending,
-    int FlakyFailed, int FlakyError)
+    int FlakyFailed, int FlakyError,
+    /// <summary>其中属于「Agent 自愈通过」的执行数（Passed 的子集）</summary>
+    int PassedViaAgent = 0)
 {
     /// <summary>该轮还没有任何执行时的零值（字典取不到时用，避免散落的 null 判断）</summary>
-    public static readonly RoundCounts Empty = new(0, 0, 0, 0, 0, 0, 0, 0);
+    public static readonly RoundCounts Empty = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
 }
 
 public class TestPlanService
@@ -123,6 +125,7 @@ public class TestPlanService
             {
                 RoundId = e.PlanRoundId!.Value,
                 e.Status,
+                e.AgentHealed,
                 e.TestCaseId,
                 CaseName = e.TestCase != null ? e.TestCase.Name : "(用例已删除)",
                 Module = e.TestCase != null ? e.TestCase.Module : null,
@@ -145,6 +148,8 @@ public class TestPlanService
             var rows = byRound.TryGetValue(round.Id, out var list) ? list : [];
 
             var passed = rows.Count(r => r.Status == ExecutionStatus.Passed);
+            // Agent 自愈通过：是 Passed 的子集，默认不计入达标（见 PlanGateEvaluator.Judge）
+            var passedViaAgent = rows.Count(r => r.AgentHealed && r.Status == ExecutionStatus.Passed);
             var failed = rows.Count(r => r.Status == ExecutionStatus.Failed);
             var error = rows.Count(r => r.Status == ExecutionStatus.Error);
             var skipped = rows.Count(r => r.Status == ExecutionStatus.Skipped);
@@ -173,7 +178,8 @@ public class TestPlanService
                 .ToList();
 
             result.Add(new PlanRoundRaw(round.RoundNo, round.StartedAt, round.CompletedAt,
-                rows.Count, passed, failed, error, skipped, flakyFailed, flakyError, blocking));
+                rows.Count, passed, failed, error, skipped, flakyFailed, flakyError, blocking,
+                PassedViaAgent: passedViaAgent));
         }
 
         return result;
@@ -195,6 +201,7 @@ public class TestPlanService
             {
                 RoundId = e.PlanRoundId!.Value,
                 e.Status,
+                e.AgentHealed,
                 IsFlaky = e.TestCase != null && e.TestCase.IsFlaky,
             })
             .ToListAsync(ct);
@@ -209,22 +216,36 @@ public class TestPlanService
                 Skipped: g.Count(x => x.Status == ExecutionStatus.Skipped),
                 Pending: g.Count(x => x.Status is ExecutionStatus.Pending or ExecutionStatus.Running),
                 FlakyFailed: g.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Failed),
-                FlakyError: g.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Error)));
+                FlakyError: g.Count(x => x.IsFlaky && x.Status == ExecutionStatus.Error),
+                // Agent 自愈通过（Passed 的子集）：默认不计入达标，见 ToStats
+                PassedViaAgent: g.Count(x => x.AgentHealed && x.Status == ExecutionStatus.Passed)));
     }
 
     /// <summary>
     /// 按计划口径把原始计数折成「参与判定的样本」。与 <see cref="PlanGateEvaluator.Judge"/> 同一算法，
     /// 保证轮次页与达标判定的数字一致。
     /// </summary>
-    public static PlanStatsDto ToStats(RoundCounts c, bool excludeFlaky)
+    public static PlanStatsDto ToStats(RoundCounts c, bool excludeFlaky, bool treatAgentHealedAsPass = false)
     {
         var excluded = excludeFlaky ? c.FlakyFailed + c.FlakyError : 0;
-        var failed = c.Failed - (excludeFlaky ? c.FlakyFailed : 0);
         var error = c.Error - (excludeFlaky ? c.FlakyError : 0);
+        // Agent 自愈"通过"默认不计入达标：从通过里扣掉、等量计入失败
+        // （与 PlanGateEvaluator.Judge 同一口径，否则轮次页与达标判定会给出两个不同的通过率）
+        var viaAgent = treatAgentHealedAsPass ? 0 : c.PassedViaAgent;
+        var effectivePassed = c.Passed - viaAgent;
+        var failed = c.Failed + viaAgent - (excludeFlaky ? c.FlakyFailed : 0);
         var denominator = Math.Max(0, c.Total - c.Skipped - excluded);
-        var passRate = denominator > 0 ? (double)c.Passed / denominator : 0;
-        return new PlanStatsDto(denominator, c.Passed, failed, error, c.Skipped, c.Pending, passRate);
+        var passRate = denominator > 0 ? (double)effectivePassed / denominator : 0;
+        return new PlanStatsDto(denominator, effectivePassed, failed, error, c.Skipped, c.Pending, passRate,
+            PassedNative: c.Passed - c.PassedViaAgent, PassedViaAgent: c.PassedViaAgent);
     }
+
+    /// <summary>项目级「Agent 自愈通过是否计入达标」（默认 false = 不计入）。多个判定入口共用。</summary>
+    public async Task<bool> GetTreatAgentHealedAsPassAsync(Guid projectId, CancellationToken ct) =>
+        await _db.Projects.AsNoTracking()
+            .Where(p => p.Id == projectId)
+            .Select(p => p.TreatAgentHealedAsPass)
+            .FirstOrDefaultAsync(ct);
 
     /// <summary>取某轮的阻塞用例明细（轮次详情展开时按需加载）</summary>
     public async Task<List<PlanRoundCaseResultDto>> LoadRoundDetailAsync(Guid roundId, CancellationToken ct)
@@ -512,9 +533,12 @@ public class TestPlanService
                                  && (d.Status == DefectStatus.New || d.Status == DefectStatus.Assigned || d.Status == DefectStatus.Fixed), ct);
         }
 
+        // Agent 自愈通过是否计入达标：项目级设置（默认不计入）
+        var treatAgentHealedAsPass = await GetTreatAgentHealedAsPassAsync(plan.ProjectId, ct);
+
         return PlanGateEvaluator.Evaluate(plan.Name, plan.ReleaseName,
             plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure,
-            plan.GateMode, rounds, plan.DefectGateEnabled, openCritical);
+            plan.GateMode, rounds, plan.DefectGateEnabled, openCritical, treatAgentHealedAsPass);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex) =>

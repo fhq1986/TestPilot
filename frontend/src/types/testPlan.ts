@@ -33,12 +33,17 @@ export const PlanGateMode = {
 export interface PlanStats {
   /** 参与判定的样本数 = 总数 − 跳过 − 被排除的 flaky，恒有 Total = Passed + Failed + Error */
   total: number
+  /** 计入达标的通过数：passedNative + (项目 TreatAgentHealedAsPass ? passedViaAgent : 0) */
   passed: number
   failed: number
   error: number
   skipped: number
   pending: number
   passRate: number
+  /** 其中「原生通过」（非 Agent 自愈）的条数 */
+  passedNative?: number
+  /** 其中「Agent 自愈通过」的条数（默认不计入达标） */
+  passedViaAgent?: number
 }
 
 export interface TestPlanSummary {
@@ -73,6 +78,11 @@ export interface TestPlanSummary {
   lastError?: string | null
   createdAt: string
   updatedAt?: string | null
+  /** 创建人显示名（M8 审计字段；历史行可能为空） */
+  createdByName?: string | null
+  // ------------------------------ 关联需求
+  requirementId?: string | null
+  requirementTitle?: string | null
 }
 
 /** 引用本计划的定时任务（只读） */
@@ -121,6 +131,8 @@ export interface TestPlanDetail {
   scopeIssues: PlanScopeIssue[]
   createdAt: string
   updatedAt?: string | null
+  requirementId?: string | null
+  requirementTitle?: string | null
 }
 
 export interface TestPlanItem {
@@ -240,5 +252,6 @@ export interface TestPlanPayload {
   environmentId?: string | null
   browsers?: string[] | null
   expandDataSets?: boolean
+  requirementId?: string | null
 }
 

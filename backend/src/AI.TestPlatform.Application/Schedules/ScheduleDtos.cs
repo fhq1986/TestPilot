@@ -13,7 +13,9 @@ public record ScheduleSummaryDto(
     IReadOnlyList<string>? Browsers = null, bool ExpandDataSets = true,
     // 迭代 E：执行范围类型与计划范围（TestPlan 时 TestCaseCount 无意义）
     ScheduleScopeKind ScopeKind = ScheduleScopeKind.Cases,
-    IReadOnlyList<SchedulePlanRefDto>? TestPlans = null);
+    IReadOnlyList<SchedulePlanRefDto>? TestPlans = null,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);
 
 /// <summary>范围里引用的计划（列表页要显示计划名而不是 ID）</summary>
 public record SchedulePlanRefDto(Guid Id, string Name, string? ReleaseName, TestPlanStatus Status);

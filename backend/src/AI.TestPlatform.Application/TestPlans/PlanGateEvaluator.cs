@@ -13,7 +13,9 @@ public record PlanRoundRaw(
     /// <summary>其中属于「不稳定用例」的执行数（只统计 Failed / Error）</summary>
     int FlakyFailed, int FlakyError,
     /// <summary>失败与 Error 的用例（去重后，供人看；同一用例多条执行只列一条）</summary>
-    IReadOnlyList<PlanCaseOutcome> BlockingCases);
+    IReadOnlyList<PlanCaseOutcome> BlockingCases,
+    /// <summary>其中属于「Agent 自愈通过」的执行数（Passed 的子集）</summary>
+    int PassedViaAgent = 0);
 
 public record PlanCaseOutcome(
     Guid TestCaseId, string Name, string? Module,
@@ -37,7 +39,9 @@ public static class PlanGateEvaluator
         IReadOnlyList<PlanRoundRaw> rounds,
         // 缺陷验收门槛（P2）：开启后项目存在未闭环致命/严重缺陷则直接不达标，
         // 无论 GateMode 与通过率如何——统计变成拦截才是验收闭环
-        bool requireNoOpenCriticalDefects = false, int openCriticalDefectCount = 0)
+        bool requireNoOpenCriticalDefects = false, int openCriticalDefectCount = 0,
+        // M8：Agent 自愈"通过"是否计入达标（项目级 TreatAgentHealedAsPass，默认 false = 不计入）
+        bool treatAgentHealedAsPass = false)
     {
         if (rounds.Count == 0)
         {
@@ -56,29 +60,36 @@ public static class PlanGateEvaluator
             // 持续回归场景：任意一轮达标即算通过——但缺陷门槛不豁免。
             // 有达标轮次时仍用那一轮出报告（Stats 才是真实通过的那轮），
             // 缺陷门槛的原因追加在后面并把结论压成不达标
-            var passing = ordered.FirstOrDefault(r => Judge(r, targetPassRate, allowErrors, excludeFlaky).Passed);
+            var passing = ordered.FirstOrDefault(r =>
+                Judge(r, targetPassRate, allowErrors, excludeFlaky, treatAgentHealedAsPass).Passed);
             if (passing is not null)
                 return Build(passing, defectReasons.Count == 0 ? true : null,
                     targetPassRate, allowErrors, excludeFlaky,
-                    planName, releaseName, [], false, defectReasons);
+                    planName, releaseName, [], false, defectReasons, treatAgentHealedAsPass);
 
             // 都不达标时用最后一轮的原因（最近一次的结果最能指导下一步）
             return Build(ordered[^1], false, targetPassRate, allowErrors, excludeFlaky,
                 planName, releaseName,
-                [$"共 {ordered.Count} 轮均未达标，以下为最后一轮的情况"], false, defectReasons);
+                [$"共 {ordered.Count} 轮均未达标，以下为最后一轮的情况"], false, defectReasons,
+                treatAgentHealedAsPass);
         }
 
         return Build(ordered[^1], null, targetPassRate, allowErrors, excludeFlaky,
-            planName, releaseName, [], false, defectReasons);
+            planName, releaseName, [], false, defectReasons, treatAgentHealedAsPass);
     }
 
     /// <summary>单轮判定</summary>
     public static (bool Passed, double PassRate, int EffectiveFailed, int EffectiveError,
         int Denominator, int ExcludedCount, List<string> Reasons) Judge(
-        PlanRoundRaw round, double targetPassRate, bool allowErrors, bool excludeFlaky)
+        PlanRoundRaw round, double targetPassRate, bool allowErrors, bool excludeFlaky,
+        bool treatAgentHealedAsPass = false)
     {
         var excluded = excludeFlaky ? round.FlakyFailed + round.FlakyError : 0;
-        var effectiveFailed = round.Failed - (excludeFlaky ? round.FlakyFailed : 0);
+        // Agent 自愈"通过"默认不算通过：它只是被 Agent 改过并重跑通了，**不是原生通过**。
+        // 处理：从有效通过里扣掉、并等量计入有效失败（既不悄悄算通过，也不从分母抹掉）。
+        var viaAgent = treatAgentHealedAsPass ? 0 : round.PassedViaAgent;
+        var effectivePassed = round.Passed - viaAgent;
+        var effectiveFailed = round.Failed + viaAgent - (excludeFlaky ? round.FlakyFailed : 0);
         // Error 可能是负数？不会——FlakyError 只统计 Status==Error 的执行，是 Failed/Error 的子集
         var effectiveError = round.Error - (excludeFlaky ? round.FlakyError : 0);
 
@@ -86,34 +97,40 @@ public static class PlanGateEvaluator
         var denominator = round.Total - round.Skipped - excluded;
         if (denominator < 0) denominator = 0;
 
-        var passRate = denominator > 0 ? (double)round.Passed / denominator : 0;
+        var passRate = denominator > 0 ? (double)effectivePassed / denominator : 0;
 
-        var reasons = new List<string>();
+        // ⚠ 只有这三条是**判定性**原因；下面的自愈说明是**告知**，不得把结论压成不达标
+        var blockingReasons = new List<string>();
         if (passRate < targetPassRate)
         {
             var gap = targetPassRate - passRate;
             // 换算成「还差几条用例」比只给百分比有用得多
             var casesShort = denominator > 0 ? (int)Math.Ceiling(gap * denominator) : 0;
-            reasons.Add(casesShort > 0
+            blockingReasons.Add(casesShort > 0
                 ? $"通过率 {passRate:P1} 低于目标 {targetPassRate:P1}（还差 {casesShort} 条用例）"
                 : $"通过率 {passRate:P1} 低于目标 {targetPassRate:P1}");
         }
         if (!allowErrors && effectiveError > 0)
-            reasons.Add($"存在 {effectiveError} 条 Error 执行（该计划未允许 Error）");
+            blockingReasons.Add($"存在 {effectiveError} 条 Error 执行（该计划未允许 Error）");
         if (denominator == 0)
-            reasons.Add("本轮没有可判定的执行样本（全部被跳过）");
+            blockingReasons.Add("本轮没有可判定的执行样本（全部被跳过）");
 
-        return (reasons.Count == 0, passRate, effectiveFailed, effectiveError, denominator, excluded, reasons);
+        var reasons = new List<string>(blockingReasons);
+        if (viaAgent > 0)
+            reasons.Add($"{viaAgent} 条为 Agent 自愈通过，按项目设置不计入达标");
+
+        return (blockingReasons.Count == 0, passRate, effectiveFailed, effectiveError, denominator, excluded, reasons);
     }
 
     private static PlanGateResult Build(
         PlanRoundRaw round, bool? forcePassed,
         double targetPassRate, bool allowErrors, bool excludeFlaky,
         string planName, string? releaseName, List<string> prefixReasons,
-        bool ignoreDefectGate = false, List<string>? defectReasons = null)
+        bool ignoreDefectGate = false, List<string>? defectReasons = null,
+        bool treatAgentHealedAsPass = false)
     {
         var (passed, passRate, effectiveFailed, effectiveError, denominator, excluded, reasons) =
-            Judge(round, targetPassRate, allowErrors, excludeFlaky);
+            Judge(round, targetPassRate, allowErrors, excludeFlaky, treatAgentHealedAsPass);
 
         if (forcePassed is not null) passed = forcePassed.Value;
 
@@ -142,8 +159,13 @@ public static class PlanGateEvaluator
             round.RoundNo,
             // Total 只算「参与判定的样本」，保证 Passed + Failed + Error == Total 可自洽校验；
             // 被跳过的与排除掉的样本另列，不混进总数
-            new PlanStatsDto(denominator, round.Passed, effectiveFailed, effectiveError,
-                round.Skipped, 0, passRate),
+            // 计入达标的通过数：默认扣掉 Agent 自愈通过；细分（原生/自愈）始终上报，便于界面区分
+            new PlanStatsDto(denominator,
+                round.Passed - (treatAgentHealedAsPass ? 0 : round.PassedViaAgent),
+                effectiveFailed, effectiveError,
+                round.Skipped, 0, passRate,
+                PassedNative: round.Passed - round.PassedViaAgent,
+                PassedViaAgent: round.PassedViaAgent),
             allReasons, blocking);
     }
 

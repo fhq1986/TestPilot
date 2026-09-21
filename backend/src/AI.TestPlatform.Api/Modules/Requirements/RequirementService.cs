@@ -38,7 +38,10 @@ public class RequirementService(TestDbContext db)
             .Select(r => new
             {
                 r.Id, r.ProjectId, r.Title, r.Description, r.ExternalKey,
-                r.Priority, r.CreatedAt,
+                r.Priority, r.CreatedAt, r.CreatedById,
+                r.PlanStartDate, r.PlanEndDate, r.ActualStartDate, r.ActualEndDate,
+                r.Status,
+                PlanCount = r.TestPlans.Count,
                 // 已删除的用例由 TestCase 的全局查询过滤器负责排除，这里不再写第二遍
                 Cases = r.TestCases
                     .Select(t => new { t.Id, LastStatus = t.Executions
@@ -49,11 +52,18 @@ public class RequirementService(TestDbContext db)
             })
             .ToListAsync(ct);
 
+        // 创建人显示名（M8 审计字段）：本页一次批量解析
+        var creatorNames = await UserNameResolver.ResolveAsync(db, requirements.Select(r => r.CreatedById), ct);
+
         var items = requirements.Select(r => new RequirementListItemDto(
             r.Id, r.ProjectId, r.Title, RichText.Normalize(r.Description), r.ExternalKey,
             r.Priority, r.CreatedAt,
             r.Cases.Count,
-            r.Cases.Count(c => c.LastStatus == ExecutionStatus.Passed))).ToList();
+            r.Cases.Count(c => c.LastStatus == ExecutionStatus.Passed),
+            creatorNames.GetName(r.CreatedById),
+            r.PlanStartDate, r.PlanEndDate, r.ActualStartDate, r.ActualEndDate,
+            r.Status,
+            r.PlanCount)).ToList();
 
         return new PagedResult<RequirementListItemDto>(items, total, page, pageSize);
     }
@@ -66,13 +76,18 @@ public class RequirementService(TestDbContext db)
             .Select(r => new
             {
                 r.Id, r.ProjectId, r.Title, r.Description, r.ExternalKey,
-                r.Priority, r.CreatedAt,
+                r.Priority, r.CreatedAt, r.CreatedById,
+                r.PlanStartDate, r.PlanEndDate, r.ActualStartDate, r.ActualEndDate,
+                r.Status,
                 CaseCount = r.TestCases.Count,
             })
             .ToListAsync(ct);
 
         var covered = rows.Count(r => r.CaseCount > 0);
         var uncovered = rows.Where(r => r.CaseCount == 0).ToList();
+
+        // 创建人显示名（M8 审计字段）：本批一次批量解析
+        var creatorNames = await UserNameResolver.ResolveAsync(db, rows.Select(r => r.CreatedById), ct);
 
         return new RequirementCoverageDto(
             projectId ?? rows.Select(r => r.ProjectId).Distinct().FirstOrDefault(),
@@ -82,7 +97,10 @@ public class RequirementService(TestDbContext db)
             rows.Count == 0 ? 0 : Math.Round(covered * 100.0 / rows.Count, 1),
             uncovered.Select(r => new RequirementListItemDto(
                 r.Id, r.ProjectId, r.Title, RichText.Normalize(r.Description), r.ExternalKey,
-                r.Priority, r.CreatedAt, 0, 0)).Take(20).ToList());
+                r.Priority, r.CreatedAt, 0, 0,
+                creatorNames.GetName(r.CreatedById),
+                r.PlanStartDate, r.PlanEndDate, r.ActualStartDate, r.ActualEndDate,
+                r.Status, 0)).Take(20).ToList());
     }
 
     public async Task<RequirementListItemDto?> GetAsync(Guid id, CancellationToken ct)
@@ -97,7 +115,10 @@ public class RequirementService(TestDbContext db)
 
         return new RequirementListItemDto(
             r.Id, r.ProjectId, r.Title, RichText.Normalize(r.Description), r.ExternalKey, r.Priority, r.CreatedAt,
-            cases.Count, 0);
+            cases.Count, 0,
+            PlanStartDate: r.PlanStartDate, PlanEndDate: r.PlanEndDate,
+            ActualStartDate: r.ActualStartDate, ActualEndDate: r.ActualEndDate,
+            Status: r.Status);
     }
 
     public async Task<Requirement> CreateAsync(CreateRequirementRequest request, CancellationToken ct)
@@ -112,6 +133,11 @@ public class RequirementService(TestDbContext db)
             Description = RichText.Normalize(request.Description),
             ExternalKey = request.ExternalKey,
             Priority = request.Priority,
+            PlanStartDate = ToUtc(request.PlanStartDate),
+            PlanEndDate = ToUtc(request.PlanEndDate),
+            ActualStartDate = ToUtc(request.ActualStartDate),
+            ActualEndDate = ToUtc(request.ActualEndDate),
+            Status = request.Status ?? RequirementStatus.NotStarted,
         };
         db.Requirements.Add(requirement);
         await db.SaveChangesAsync(ct);
@@ -129,6 +155,11 @@ public class RequirementService(TestDbContext db)
         requirement.Description = RichText.Normalize(request.Description);
         requirement.ExternalKey = request.ExternalKey;
         requirement.Priority = request.Priority;
+        requirement.PlanStartDate = ToUtc(request.PlanStartDate);
+        requirement.PlanEndDate = ToUtc(request.PlanEndDate);
+        requirement.ActualStartDate = ToUtc(request.ActualStartDate);
+        requirement.ActualEndDate = ToUtc(request.ActualEndDate);
+        if (request.Status.HasValue) requirement.Status = request.Status.Value;
         await db.SaveChangesAsync(ct);
         return requirement;
     }
@@ -156,5 +187,21 @@ public class RequirementService(TestDbContext db)
 
         await db.SaveChangesAsync(ct);
         return new BatchDeleteResultDto(requirements.Count, skipped);
+    }
+
+    /// <summary>
+    /// JSON 绑定的时间是 Kind=Unspecified（前端只传纯日期 "2026-09-21" 或无时区值），
+    /// Npgsql 写 timestamptz 拒绝 Unspecified——按本地时间解释后转 UTC。
+    /// 与 TestPlanApiExtensions / TestCaseReportService 的 ToUtc 同一套约定。
+    /// </summary>
+    private static DateTime? ToUtc(DateTime? value)
+    {
+        if (value is null) return null;
+        return value.Value.Kind switch
+        {
+            DateTimeKind.Utc => value.Value,
+            DateTimeKind.Local => value.Value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value.Value, DateTimeKind.Local).ToUniversalTime(),
+        };
     }
 }

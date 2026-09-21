@@ -47,9 +47,11 @@ public class TestPlanReportService
                                  && (d.Status == DefectStatus.New || d.Status == DefectStatus.Assigned || d.Status == DefectStatus.Fixed), ct);
         }
 
+        // Agent 自愈通过是否计入达标（项目级，默认不计入）——报告与页面口径必须一致
+        var treatAgentHealed = await _plans.GetTreatAgentHealedAsPassAsync(plan.ProjectId, ct);
         var gate = PlanGateEvaluator.Evaluate(plan.Name, plan.ReleaseName,
             plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure, plan.GateMode, rounds,
-            plan.DefectGateEnabled, openCritical);
+            plan.DefectGateEnabled, openCritical, treatAgentHealed);
 
         // 计划范围内的缺陷：与计划范围用例存在关联（DefectCase 或首发现用例）的缺陷
         var planCaseIds = await _db.TestPlanItems.AsNoTracking()

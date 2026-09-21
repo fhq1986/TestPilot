@@ -58,6 +58,15 @@
           <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">{{ row.description || '—' }}</template>
           </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="170">
+            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+          </el-table-column>
           <el-table-column label="更新时间" width="170">
             <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
           </el-table-column>

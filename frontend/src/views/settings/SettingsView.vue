@@ -338,6 +338,34 @@
       </el-collapse-transition>
     </el-card>
 
+    <el-card class="settings-card">
+      <template #header>
+        <div class="card-header" @click="toggleCard('agent')">
+          <span>Agent 自愈闭环</span>
+          <span class="card-header-hint">执行失败后由 AI 归因并自动修复后重跑；仅修改执行副本、不改动用例本身</span>
+          <el-icon class="collapse-arrow" :class="{ 'is-collapsed': isCollapsed('agent') }"><ArrowDown /></el-icon>
+        </div>
+      </template>
+
+      <el-collapse-transition>
+      <div v-show="!isCollapsed('agent')">
+        <el-form :model="agentForm" label-position="top" @submit.prevent>
+          <el-form-item label="启用 Agent 失败自愈闭环（系统级总开关）">
+            <el-switch v-model="agentForm.enabled" />
+            <div class="switch-hint">
+              这是系统级总闸：开启后，执行失败会尝试由 AI 归因并自动修复后重跑（还须同时开启对应项目的项目级开关）。
+              默认关闭。当 LLM 不可用时自动降级，不影响正常执行与其他功能。
+            </div>
+          </el-form-item>
+
+          <el-form-item>
+            <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+      </el-collapse-transition>
+    </el-card>
+
     <div v-if="view" class="settings-updated">最近更新：{{ formatDateTime(view.updatedAt) }}</div>
   </div>
 </template>
@@ -399,6 +427,11 @@ const aiForm = reactive({
 
 const webhookForm = reactive({
   token: '',
+})
+
+// ------------------------------------------------------------ M8 Agent 自愈闭环（系统级总开关）
+const agentForm = reactive({
+  enabled: false,
 })
 
 // ------------------------------------------------------------ SSO 扫码登录
@@ -715,6 +748,8 @@ const applyView = (v: SettingsView) => {
   ssoForm.dingtalkEnabled = v.ssoDingtalkEnabled ?? false
   ssoForm.dingtalkClientId = v.ssoDingtalkClientId ?? ''
   ssoForm.dingtalkClientSecret = ''
+  // M8 Agent 自愈闭环系统级总开关（后端未升级时缺字段，用 ?? false 兜底）
+  agentForm.enabled = v.agentLoopEnabled ?? false
 }
 
 const load = async () => {
@@ -763,6 +798,7 @@ const handleSave = async () => {
       ssoDingtalkEnabled: ssoForm.dingtalkEnabled,
       ssoDingtalkClientId: ssoForm.dingtalkClientId.trim(),
       ssoDingtalkClientSecret: ssoForm.dingtalkClientSecret.trim() || null,
+      agentLoopEnabled: agentForm.enabled,
     })
     await load()
     ElMessage.success('配置已保存并生效')

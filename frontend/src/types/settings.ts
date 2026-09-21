@@ -41,6 +41,8 @@ export interface SettingsView {
   ssoDingtalkClientId: string
   ssoDingtalkClientSecretMasked: string
   hasSsoDingtalkClientSecret: boolean
+  // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
+  agentLoopEnabled: boolean
 }
 
 export interface UpdateSettingsPayload {
@@ -75,6 +77,8 @@ export interface UpdateSettingsPayload {
   ssoDingtalkClientId?: string | null
   /** 留空表示保留原值 */
   ssoDingtalkClientSecret?: string | null
+  // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
+  agentLoopEnabled?: boolean | null
   /** 需要清空的字段，逗号分隔：wecom,dingtalk,feishu,mailto,smtppassword */
   clearWebhook?: string | null
 }

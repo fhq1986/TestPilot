@@ -3,6 +3,7 @@ using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Common;
 using AI.TestPlatform.Api.Execution;
+using AI.TestPlatform.Application.AI;
 using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Application.Executions;
 using AI.TestPlatform.Domain.Entities;
@@ -209,7 +210,9 @@ public static class ExecutionApiExtensions
                             .Where(p => p.Id == t.ProjectId)
                             .Select(p => p.Name)
                             .FirstOrDefault())
-                        .FirstOrDefault()))
+                        .FirstOrDefault(),
+                    // M8 Agent 自愈：列表据此打「自愈通过」标记
+                    e.AgentHealed))
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<ExecutionSummaryDto>(items, total, page, pageSize));
@@ -278,6 +281,132 @@ public static class ExecutionApiExtensions
             return execution is null
                 ? Results.NotFound()
                 : Results.Ok(execution.ToDetailDto(execution.TestCase?.Name ?? "(用例已删除)"));
+        }).WithPermission(Permission.ViewExecutions);
+
+        // M8 Agent 修复轨迹：执行详情页「Agent 修复轨迹」区展示每次尝试的归因 / 动作 / 结果。
+        // 无自愈记录时返回空数组（前端不渲染该区）。
+        group.MapGet("/{id:guid}/agent-attempts", async (Guid id, TestDbContext db, CancellationToken ct) =>
+        {
+            var attempts = await db.AgentAttempts.AsNoTracking()
+                .Where(a => a.ExecutionId == id)
+                .OrderBy(a => a.AttemptNumber)
+                .ToListAsync(ct);
+            return Results.Ok(attempts.Select(a => a.ToDto()).ToList());
+        }).WithPermission(Permission.ViewExecutions);
+
+        // M8 Agent 审批：采纳一次「需人工审批」的修复。
+        // 采纳 = 把修复应用到**真实 TestStep**（与执行期只改副本相反）并持久化；破坏性/未实现的动作会被 FixActionApplier 拒绝。
+        group.MapPost("/agent-attempts/{attemptId:guid}/approve", async (
+            Guid attemptId, TestDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            var attempt = await db.AgentAttempts.FirstOrDefaultAsync(a => a.Id == attemptId, ct);
+            if (attempt is null)
+                return Results.NotFound();
+            if (!attempt.NeedsApproval)
+                return Results.BadRequest(new { message = "该尝试无需人工审批" });
+            if (attempt.Approved is not null)
+                return Results.BadRequest(new { message = "该尝试已处理" });
+
+            var applied = 0;
+            try
+            {
+                var fixes = string.IsNullOrWhiteSpace(attempt.AppliedActions)
+                    ? new List<FixActionDto>()
+                    // ⚠ 必须用 Web 选项反序列化：AppliedActions 是以 camelCase 序列化的，
+                    // 用默认选项会因大小写不匹配而绑定失败（字段全 null）
+                    : System.Text.Json.JsonSerializer.Deserialize<List<FixActionDto>>(
+                        attempt.AppliedActions,
+                        new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))
+                      ?? new List<FixActionDto>();
+                var ctx = await db.Executions.AsNoTracking()
+                    .Where(e => e.Id == attempt.ExecutionId)
+                    .Select(e => new
+                    {
+                        e.TestCaseId,
+                        BaseUrl = e.TestCase != null ? e.TestCase.BaseUrl : null,
+                    })
+                    .FirstOrDefaultAsync(ct);
+                if (ctx?.TestCaseId is { } cid && fixes.Count > 0)
+                {
+                    var steps = await db.TestSteps
+                        .Where(s => s.TestCaseId == cid)
+                        .OrderBy(s => s.StepOrder)
+                        .ToListAsync(ct);
+                    foreach (var fix in fixes)
+                    {
+                        // 采纳同样走 URL 同源校验（baseUrl）与全部安全校验
+                        if (FixActionApplier.TryApply(steps, fix, out _, ctx.BaseUrl))
+                            applied++;
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                applied = 0;
+            }
+
+            attempt.Approved = true;
+            attempt.ApprovedBy = currentUser.Id;
+            attempt.ApprovedAt = DateTime.UtcNow;
+            attempt.Persisted = applied > 0;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { applied });
+        }).WithPermission(Permission.ManageTestCases).WithAudit("Approve", "AgentAttempt");
+
+        // M8 Agent 审批：驳回一次待审批修复（不改动用例）。
+        group.MapPost("/agent-attempts/{attemptId:guid}/reject", async (
+            Guid attemptId, TestDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
+        {
+            var attempt = await db.AgentAttempts.FirstOrDefaultAsync(a => a.Id == attemptId, ct);
+            if (attempt is null)
+                return Results.NotFound();
+            if (attempt.Approved is not null)
+                return Results.BadRequest(new { message = "该尝试已处理" });
+
+            attempt.Approved = false;
+            attempt.ApprovedBy = currentUser.Id;
+            attempt.ApprovedAt = DateTime.UtcNow;
+            attempt.Result = AgentAttemptResult.Rejected;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok();
+        }).WithPermission(Permission.ManageTestCases).WithAudit("Reject", "AgentAttempt");
+
+        // M8 Planner（Phase 3）：按该执行的目标 + 失败历史重新规划步骤序列。
+        // 只返回建议（人工采纳），不自动改动用例——新步骤的落库属"采纳"流程。
+        group.MapPost("/{id:guid}/replan", async (Guid id, IPlannerService planner, CancellationToken ct) =>
+        {
+            var plan = await planner.PlanAsync(id, ct);
+            return Results.Ok(plan);
+        }).WithPermission(Permission.ManageTestCases).WithAudit("Replan", "Execution");
+
+        // M8 Agent 审批工作台：跨执行的待审批 / 已批准 / 已拒绝列表（status = pending|approved|rejected）
+        group.MapGet("/agent-approvals", async (TestDbContext db, CancellationToken ct,
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20) =>
+        {
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize is < 1 ? 20 : pageSize > 100 ? 100 : pageSize;
+
+            var q = db.AgentAttempts.AsNoTracking().Where(a => a.NeedsApproval);
+            q = status?.Trim().ToLowerInvariant() switch
+            {
+                "pending" => q.Where(a => a.Approved == null),
+                "approved" => q.Where(a => a.Approved == true),
+                "rejected" => q.Where(a => a.Approved == false),
+                _ => q,
+            };
+
+            var total = await q.CountAsync(ct);
+            var items = await q.OrderByDescending(a => a.CreatedAt)
+                .Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(a => new AgentApprovalItemDto(
+                    a.Id, a.ExecutionId,
+                    a.Execution!.TestCase != null ? a.Execution.TestCase.Name : "(用例已删除)",
+                    a.TargetStepOrder, (int)a.FixCategory, a.Confidence, a.FixSummary,
+                    a.Approved, a.ApprovedBy, a.ApprovedAt, (int)a.Result, a.CreatedAt))
+                .ToListAsync(ct);
+            return Results.Ok(new PagedResult<AgentApprovalItemDto>(items, total, page, pageSize));
         }).WithPermission(Permission.ViewExecutions);
 
         // 该执行里「已经转成缺陷」的步骤：执行详情页的「缺陷」列据此避免重复转单。

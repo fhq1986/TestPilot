@@ -85,6 +85,16 @@ public class Execution
     public string? AISuggestedFix { get; set; }
     public float? DiagnosisConfidence { get; set; }
 
+    // ---------------- M8 Agent 自愈闭环（见 docs/m8-agent-design.md）
+    /// <summary>本次执行触发的修复合计尝试次数</summary>
+    public int AgentLoopCount { get; set; }
+    /// <summary>是否由 Agent 自愈后通过（用于统计口径区分「原生通过」与「自愈通过」）</summary>
+    public bool AgentHealed { get; set; }
+    /// <summary>本次执行消耗的 LLM 调用数</summary>
+    public int AgentBudgetUsed { get; set; }
+    /// <summary>整轮 Agent Loop 的执行级最终结论（尝试级结论在 AgentAttempt.Result）</summary>
+    public AgentAttemptResult? AgentFinalVerdict { get; set; }
+
     /// <summary>本次执行中步骤内部重试消耗的总次数（RetryCount/flaky 隔离产生）；>0 说明有靠重试才稳住的步骤</summary>
     public int StepRetryCount { get; set; }
 

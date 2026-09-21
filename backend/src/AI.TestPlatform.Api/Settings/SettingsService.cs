@@ -101,6 +101,9 @@ public class SettingsService
             }
         }
 
+        // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
+        if (request.AgentLoopEnabled.HasValue) config.AgentLoopEnabled = request.AgentLoopEnabled.Value;
+
         config.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return ToView(config);
@@ -134,7 +137,8 @@ public class SettingsService
         c.SsoWecomEnabled, c.SsoWecomCorpId, c.SsoWecomAgentId,
         Mask(c.SsoWecomSecret), !string.IsNullOrEmpty(c.SsoWecomSecret),
         c.SsoDingtalkEnabled, c.SsoDingtalkClientId,
-        Mask(c.SsoDingtalkClientSecret), !string.IsNullOrEmpty(c.SsoDingtalkClientSecret));
+        Mask(c.SsoDingtalkClientSecret), !string.IsNullOrEmpty(c.SsoDingtalkClientSecret),
+        c.AgentLoopEnabled);
 
     /// <summary>
     /// 构建当前生效的 SSO 运行时配置（数据库为权威，设置页保存即生效，无需重启）。

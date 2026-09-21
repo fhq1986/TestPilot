@@ -59,12 +59,15 @@ public class TestRunner
         Environment? environment,
         CancellationToken ct,
         Func<ExecutionResult, Task>? onStepCompleted = null,
-        Func<int, StepConfig?, Task>? onStepStarted = null)
+        Func<int, StepConfig?, Task>? onStepStarted = null,
+        // M8 Agent 自愈重跑用：直接注入一份步骤副本，跳过 DB 解析。
+        // 副本由调用方构造（不挂 DbContext），从而**绝不写回真实 TestStep**。
+        IReadOnlyList<TestStep>? stepOverride = null)
     {
         var testCase = execution.TestCase!;
         // 数据驱动：把 {{变量}} 换成本次执行的值（未绑数据集/无变量时原样返回）
         var variables = execution.Variables;
-        var steps = await ResolveStepsAsync(testCase, variables, ct);
+        var steps = stepOverride is not null ? stepOverride.ToList() : await ResolveStepsAsync(testCase, variables, ct);
         // 步骤总数快照（展开后、不含自动登录前置）：详情页「共 x 步」进度指示的分母。
         // 由步骤完成回调的增量 SaveChanges 尽早落库，整条结束后兜底落库。
         execution.TotalSteps = steps.Count;
@@ -290,6 +293,9 @@ public class TestRunner
                     result.ErrorMessage = ex.Message;
                     result.StackTrace = ex.StackTrace;
                     _logger.LogWarning(ex, "步骤 {Order} 执行失败", step.StepOrder);
+                    // M8：失败时留一份页面可交互元素快照，供 Agent 归因产出**具体**定位符
+                    // （没有 DOM 证据时 LLM 只能给"指导"，无法落地 locator_value）。采集失败不影响主流程。
+                    await TryCaptureElementsAsync(page, result);
                 }
                 sw.Stop();
                 result.DurationMs = (int)sw.ElapsedMilliseconds;
@@ -459,7 +465,7 @@ public class TestRunner
     /// 反过来的话，共享步骤组里的 {{变量}} 会被外层数据集行提前消耗掉，
     /// 组内默认值就没机会生效了。
     /// </summary>
-    private async Task<List<TestStep>> ResolveStepsAsync(
+    public async Task<List<TestStep>> ResolveStepsAsync(
         TestCase testCase, IReadOnlyDictionary<string, string>? variables, CancellationToken ct)
     {
         var ordered = testCase.Steps.OrderBy(s => s.StepOrder).ToList();
@@ -664,7 +670,12 @@ public class TestRunner
                     throw new StepExecutionException("Navigate 缺少 URL");
                 var resolvedUrl = ResolveAbsoluteGotoUrl(cfg.Url, ResolveBaseUrl(testCase, environment), "Navigate 步骤");
                 var beforeUrl = page.Url;
-                var targetPath = cfg.Url.TrimStart('/');
+                // 目标路径用于「URL 是否真的到达」的判定。⚠ cfg.Url 可能是**绝对地址**（如 http://host/），
+                // 此时必须从 resolvedUrl 取 AbsolutePath —— 原来直接 TrimStart('/') 会把整串 URL 当成路径，
+                // 与 location.pathname 永不匹配，导致「绝对地址 Navigate 必然假失败」。
+                var targetPath = Uri.TryCreate(resolvedUrl, UriKind.Absolute, out var targetUri)
+                    ? targetUri.AbsolutePath
+                    : cfg.Url.TrimStart('/');
                 _logger.LogInformation("Navigate: 前URL={Before}, 目标URL={Target}, raw={Raw}",
                     beforeUrl, resolvedUrl, cfg.Url);
                 await page.GotoAsync(resolvedUrl,
@@ -676,11 +687,14 @@ public class TestRunner
                 // GotoAsync(NetworkIdle) 在 SPA 里可能过早满足（vue-router 切换不一定发 HTTP），
                 // 硬等 URL 真的包含目标路径才算数——如果路由守卫踢回 /login 这里会超时失败
                 var targetLower = targetPath.ToLowerInvariant();
+                // 用 JSON 序列化包成 JS 字符串字面量，避免路径里的引号破坏脚本
+                var targetJs = System.Text.Json.JsonSerializer.Serialize(targetLower);
                 var urlReached = await page.EvaluateAsync<bool>(
                     $@"async () => {{
+                        const target = {targetJs};
                         const start = Date.now();
                         while (Date.now() - start < 15000) {{
-                            if (location.pathname.toLowerCase().includes('{targetLower}')) return true;
+                            if (location.pathname.toLowerCase().includes(target)) return true;
                             await new Promise(r => setTimeout(r, 150));
                         }}
                         return false;
@@ -1428,6 +1442,24 @@ public class TestRunner
         if (!string.IsNullOrWhiteSpace(failedLocator))
             _logger.LogInformation("已用 AI 选择器 {New} 替换失效选择器 {Old}",
                 located.SelectorValue, failedLocator);
+    }
+
+    /// <summary>
+    /// M8：失败时采集页面可交互元素快照并挂到结果行上（jsonb），供 Agent 归因产出具体定位符。
+    /// 刻意 best-effort：采集是增强信息，失败绝不能把原本的步骤失败替换成采集异常。
+    /// </summary>
+    private async Task TryCaptureElementsAsync(IPage page, ExecutionResult result)
+    {
+        try
+        {
+            var elements = await DomExtractor.ExtractAsync(page);
+            if (elements.Count > 0)
+                result.ElementSnapshot = System.Text.Json.JsonSerializer.Serialize(elements);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "采集元素快照失败（不影响执行）步骤 {Order}", result.StepOrder);
+        }
     }
 
     private async Task<LocatedSelector> LocateWithAIAsync(

@@ -29,7 +29,11 @@ public static class ProjectApiExtensions
         p.TestOwner != null ? (p.TestOwner.DisplayName ?? p.TestOwner.Username) : null,
         p.TestOwner != null ? p.TestOwner.Email : null,
         p.DeveloperOwnerId,
-        p.DeveloperOwner != null ? (p.DeveloperOwner.DisplayName ?? p.DeveloperOwner.Username) : null);
+        p.DeveloperOwner != null ? (p.DeveloperOwner.DisplayName ?? p.DeveloperOwner.Username) : null,
+        // M8 Agent 自愈项目级开关
+        p.AgentLoopEnabled, p.TreatAgentHealedAsPass,
+        // 创建人名无法在静态表达式里解析（需查 Users），端点物化后批量回填
+        null);
 
     public static RouteGroupBuilder MapProjectApi(this RouteGroupBuilder group)
     {
@@ -57,7 +61,11 @@ public static class ProjectApiExtensions
                 .Select(ToDto)
                 .ToListAsync(ct);
 
-            return Results.Ok(new PagedResult<ProjectDto>(items, total, page, pageSize));
+            // 创建人显示名：静态表达式树里解析不了，物化后批量回填
+            var names = await UserNameResolver.ResolveAsync(db, items.Select(p => (Guid?)p.CreatedById), ct);
+            var withNames = items.Select(p => p with { CreatedByName = names.GetName(p.CreatedById) }).ToList();
+
+            return Results.Ok(new PagedResult<ProjectDto>(withNames, total, page, pageSize));
         }).WithPermission(Permission.ViewProjects);
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
@@ -66,8 +74,10 @@ public static class ProjectApiExtensions
                 .Where(p => p.Id == id)
                 .Select(ToDto)
                 .FirstOrDefaultAsync(ct);
+            if (project is null) return Results.NotFound();
 
-            return project is null ? Results.NotFound() : Results.Ok(project);
+            var names = await UserNameResolver.ResolveAsync(db, new Guid?[] { project.CreatedById }, ct);
+            return Results.Ok(project with { CreatedByName = names.GetName(project.CreatedById) });
         }).WithPermission(Permission.ViewProjects);
 
         group.MapPost("/", async (
@@ -152,6 +162,10 @@ public static class ProjectApiExtensions
             project.ManagerId = request.ManagerId;
             project.TestOwnerId = request.TestOwnerId;
             project.DeveloperOwnerId = request.DeveloperOwnerId;
+            // M8 Agent 自愈（项目级）：未传则保持原值
+            if (request.AgentLoopEnabled.HasValue) project.AgentLoopEnabled = request.AgentLoopEnabled.Value;
+            if (request.TreatAgentHealedAsPass.HasValue)
+                project.TreatAgentHealedAsPass = request.TreatAgentHealedAsPass.Value;
             project.UpdatedAt = DateTime.UtcNow;
             try
             {

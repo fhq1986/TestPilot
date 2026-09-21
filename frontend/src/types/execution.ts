@@ -85,6 +85,8 @@ export interface ExecutionSummary {
   skipReason?: string | null
   /** 所属项目名（列表跨项目展示用，后端 JOIN 带出） */
   projectName?: string | null
+  /** M8 Agent 自愈：是否由 Agent 自愈后通过（列表打「自愈通过」标记） */
+  agentHealed?: boolean
 }
 
 export interface ExecutionResultItem {
@@ -117,4 +119,81 @@ export interface ExecutionDetail extends ExecutionSummary {
   totalSteps?: number | null
   /** 所属项目名称（透过用例取） */
   projectName?: string | null
+  // M8 Agent 自愈闭环（详见 docs/m8-agent-design.md §4.3）
+  agentHealed?: boolean
+  /** 执行级最终结论（AgentAttemptResult 的 int 值） */
+  agentFinalVerdict?: number | null
+  agentLoopCount?: number
+  agentBudgetUsed?: number
 }
+
+/** M8 Agent 修复轨迹的一次尝试（/executions/{id}/agent-attempts） */
+export interface AgentAttempt {
+  id: string
+  attemptNumber: number
+  targetStepOrder: number
+  fixCategory: number
+  confidence: number
+  fixSummary?: string | null
+  appliedSuccessfully: boolean
+  appliedActions?: string | null
+  result: number
+  failureAfterFix?: string | null
+  needsApproval: boolean
+  approved?: boolean | null
+  llmInputTokens: number
+  llmOutputTokens: number
+  llmModel?: string | null
+  createdAt: string
+  completedAt?: string | null
+}
+
+/** FixCategory 文案（与后端 FixCategory 枚举数值一致，只能追加） */
+export const FIX_CATEGORY_LABELS: Record<number, string> = {
+  0: '定位器更新',
+  1: '等待策略',
+  2: '步骤配置微调',
+  3: '插入步骤',
+  4: '删除步骤',
+  5: '重排步骤',
+  6: '放宽断言',
+  7: '应用缺陷',
+  8: '环境问题',
+  9: '数据问题',
+  10: '未知',
+}
+
+/** M8 Agent 审批工作台列表项（跨执行） */
+export interface AgentApprovalItem {
+  attemptId: string
+  executionId: string
+  testCaseName: string
+  targetStepOrder: number
+  fixCategory: number
+  confidence: number
+  fixSummary?: string | null
+  approved?: boolean | null
+  approvedBy?: string | null
+  approvedAt?: string | null
+  result: number
+  createdAt: string
+}
+
+/** AgentAttemptResult 文案（与后端枚举数值一致，只能追加） */
+export const AGENT_ATTEMPT_RESULT_LABELS: Record<number, string> = {
+  0: '已修复',
+  1: '部分修复',
+  2: '修复失败',
+  3: '预算耗尽',
+  4: '人工拒绝',
+  5: '跳过',
+}
+
+/** 尝试结果对应的标签配色 */
+export const agentAttemptResultTagType = (
+  value: number,
+): 'success' | 'danger' | 'warning' | 'info' =>
+  (({ 0: 'success', 1: 'warning', 2: 'danger', 3: 'warning', 4: 'info', 5: 'info' } as Record<
+    number,
+    string
+  >)[value] ?? 'info') as 'success' | 'danger' | 'warning' | 'info'

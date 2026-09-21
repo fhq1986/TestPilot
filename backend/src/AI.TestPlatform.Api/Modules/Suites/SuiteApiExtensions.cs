@@ -48,7 +48,11 @@ public static class SuiteApiExtensions
                     s.Cases.Count,
                     s.EnvironmentId, s.Environment != null ? s.Environment.Name : null,
                     s.LastRunAt, s.LastSuiteRunId, s.LastCreatedCount, s.LastError,
-                    s.CreatedAt, s.UpdatedAt, s.FailurePolicy))
+                    s.CreatedAt, s.UpdatedAt, s.FailurePolicy,
+                    // 创建人显示名（M8 审计字段）：EF 翻译成相关子查询
+                    db.Users.Where(u => u.Id == s.CreatedById)
+                        .Select(u => u.DisplayName != null && u.DisplayName != "" ? u.DisplayName : u.Username)
+                        .FirstOrDefault()))
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<SuiteSummaryDto>(items, total, page, pageSize));

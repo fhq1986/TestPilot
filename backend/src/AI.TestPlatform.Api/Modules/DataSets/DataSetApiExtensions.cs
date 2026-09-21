@@ -9,6 +9,7 @@ using AI.TestPlatform.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using AI.TestPlatform.Api.Common;
 
 namespace AI.TestPlatform.Api.Modules.DataSets;
 
@@ -46,8 +47,12 @@ public static class DataSetApiExtensions
                     d.Id, d.ProjectId, ProjectName = d.Project.Name,
                     d.Name, d.Description, d.Columns,
                     d.RowCount, d.CreatedAt, d.UpdatedAt,
+                    d.CreatedById,
                 })
                 .ToListAsync(ct);
+
+            // 创建人显示名（M8 审计字段）：本页一次批量解析
+            var creatorNames = await UserNameResolver.ResolveAsync(db, rows.Select(r => r.CreatedById), ct);
 
             var ids = rows.Select(r => r.Id).ToList();
             // 引用数：用例表按 DataSetId 聚合（软删除的用例已被全局过滤器排除）
@@ -61,7 +66,8 @@ public static class DataSetApiExtensions
                 d.Id, d.ProjectId, d.ProjectName, d.Name, d.Description,
                 d.Columns.Count, d.RowCount,
                 usage.TryGetValue(d.Id, out var count) ? count : 0,
-                d.CreatedAt, d.UpdatedAt)).ToList();
+                d.CreatedAt, d.UpdatedAt,
+                creatorNames.GetName(d.CreatedById))).ToList();
 
             return Results.Ok(new PagedResult<DataSetSummaryDto>(items, total, page, pageSize));
         }).WithPermission(Permission.ViewTestCases);

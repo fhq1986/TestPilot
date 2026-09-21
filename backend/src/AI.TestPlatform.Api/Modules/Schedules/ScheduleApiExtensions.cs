@@ -9,6 +9,7 @@ using AI.TestPlatform.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using AI.TestPlatform.Api.Common;
 
 namespace AI.TestPlatform.Api.Modules.Schedules;
 
@@ -52,8 +53,12 @@ public static class ScheduleApiExtensions
                     s.LastRunAt, s.NextRunAt, s.LastCreatedCount, s.LastError,
                     s.CreatedAt, s.UpdatedAt, s.Browsers, s.ExpandDataSets,
                     s.ScopeKind, s.TestPlanIds,
+                    s.CreatedById,
                 })
                 .ToListAsync(ct);
+
+            // 创建人显示名（M8 审计字段）：本页一次批量解析
+            var creatorNames = await UserNameResolver.ResolveAsync(db, rows.Select(r => r.CreatedById), ct);
 
             // 计划范围要先批量取出计划名，否则前端只能显示一串 ID
             var allPlanIds = rows
@@ -92,7 +97,8 @@ public static class ScheduleApiExtensions
                     s.LastRunAt, s.NextRunAt, s.LastCreatedCount, s.LastError,
                     CronUtils.Describe(s.CronExpression),
                     s.CreatedAt, s.UpdatedAt, s.Browsers, s.ExpandDataSets,
-                    s.ScopeKind, planList));
+                    s.ScopeKind, planList,
+                    creatorNames.GetName(s.CreatedById)));
             }
 
             return Results.Ok(new PagedResult<ScheduleSummaryDto>(items, total, page, pageSize));

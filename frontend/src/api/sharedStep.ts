@@ -34,6 +34,8 @@ export interface SharedStepGroupView {
   variables: SharedVariable[]
   createdAt: string
   updatedAt: string | null
+  /** 创建人显示名（M8 审计字段；历史行可能为空） */
+  createdByName?: string | null
 }
 
 export interface SharedStepGroupDetail {

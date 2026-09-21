@@ -23,6 +23,8 @@ public class TestDbContext : DbContext
     public DbSet<TestStep> TestSteps => Set<TestStep>();
     public DbSet<Execution> Executions => Set<Execution>();
     public DbSet<ExecutionResult> ExecutionResults => Set<ExecutionResult>();
+    // M8 Agent：失败修复尝试轨迹
+    public DbSet<AgentAttempt> AgentAttempts => Set<AgentAttempt>();
     public DbSet<ExecutionNode> ExecutionNodes => Set<ExecutionNode>();
     public DbSet<Schedule> Schedules => Set<Schedule>();
     public DbSet<DataSet> DataSets => Set<DataSet>();
@@ -223,6 +225,10 @@ public class TestDbContext : DbContext
             // 之所以能直接加：Project 没有软删除字段（删除是物理删除），
             // 不存在"已删行的名称把新项目挡住"的问题。
             entity.HasIndex(p => p.Name).IsUnique();
+
+            // M8 Agent 自愈项目级开关（系统级总开关在 SystemConfig）。默认全部关闭。
+            entity.Property(p => p.AgentLoopEnabled).HasDefaultValue(false);
+            entity.Property(p => p.TreatAgentHealedAsPass).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<TestCase>(entity =>
@@ -397,6 +403,31 @@ public class TestDbContext : DbContext
                 snapshot.Property(s => s.Name).HasMaxLength(100);
                 snapshot.Property(s => s.BaseUrl).HasMaxLength(500);
             });
+            // M8 Agent 自愈：新列非空，显式默认值（迁移据此回填历史行）
+            entity.Property(e => e.AgentLoopCount).HasDefaultValue(0);
+            entity.Property(e => e.AgentHealed).HasDefaultValue(false);
+            entity.Property(e => e.AgentBudgetUsed).HasDefaultValue(0);
+        });
+
+        // M8 Agent：一次「失败 → 归因 → 修复 → 重跑」尝试的轨迹，挂在 Execution 下。
+        // 数据只在"执行失败且自愈开启"时产生；结论分两层：AgentAttempt.Result（尝试级）
+        // 与 Execution.AgentFinalVerdict（执行级）。
+        modelBuilder.Entity<AgentAttempt>(entity =>
+        {
+            entity.HasIndex(a => a.ExecutionId);
+            // 同一次执行内 AttemptNumber 唯一——并发下防重（应用层不做"先查后写"）
+            entity.HasIndex(a => new { a.ExecutionId, a.AttemptNumber }).IsUnique();
+            // 证据/动作按项目既有约定用 jsonb（查库排障时可按内容过滤）
+            entity.Property(a => a.FailureEvidence).HasColumnType("jsonb");
+            entity.Property(a => a.AppliedActions).HasColumnType("jsonb");
+            // LLM 原始返回：应用层截断到 8000（省略号计入上限，防 Postgres 22001 静默丢记录）
+            entity.Property(a => a.DiagnosisRaw).HasMaxLength(8000);
+            entity.Property(a => a.FixSummary).HasMaxLength(2000);
+            entity.Property(a => a.FailureAfterFix).HasMaxLength(2000);
+            entity.Property(a => a.LlmModel).HasMaxLength(100);
+            entity.HasOne(a => a.Execution).WithMany()
+                .HasForeignKey(a => a.ExecutionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ExecutionResult>(entity =>
@@ -412,6 +443,8 @@ public class TestDbContext : DbContext
                 snapshot.OwnsOne(c => c.Selector);
                 snapshot.OwnsMany(c => c.Headers);
             });
+            // M8：失败步骤采集的页面可交互元素快照（jsonb，供 Agent 归因产出具体定位符）
+            entity.Property(r => r.ElementSnapshot).HasColumnType("jsonb");
         });
 
         modelBuilder.Entity<AIElementCache>(entity =>
@@ -531,6 +564,9 @@ public class TestDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull);
             // 负责人被删除时置空而不是连带删计划：计划是验收材料，不能因为人员离职而消失
             entity.HasOne(p => p.Owner).WithMany().HasForeignKey(p => p.OwnerId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // 需求被删时计划保留（回到未关联状态，与 TestCase→Requirement 同口径）
+            entity.HasOne(p => p.Requirement).WithMany(r => r.TestPlans).HasForeignKey(p => p.RequirementId)
                 .OnDelete(DeleteBehavior.SetNull);
             var browsersComparer = new ValueComparer<List<string>>(
                 (a, b) => a == null ? b == null : b != null && a.SequenceEqual(b),

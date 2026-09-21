@@ -17,11 +17,13 @@ public class AIClient
 {
     private readonly HttpClient _http;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AILivenessBreaker _breaker;
 
-    public AIClient(HttpClient http, IServiceScopeFactory scopeFactory)
+    public AIClient(HttpClient http, IServiceScopeFactory scopeFactory, AILivenessBreaker breaker)
     {
         _http = http;
         _scopeFactory = scopeFactory;
+        _breaker = breaker;
     }
 
     public async Task<List<GeneratedCaseDto>> GenerateAsync(
@@ -146,6 +148,101 @@ public class AIClient
     }
 
     /// <summary>
+    /// M8 结构化失败归因：在诊断基础上拿到 fix_category 与可执行 proposed_fixes。
+    /// ⚠ 下游判定一律以 FixCategory 为准（Category 仅展示）。
+    /// </summary>
+    public async Task<AttributedResultDto> AttributeAsync(
+        Dictionary<string, object?> testCase,
+        List<FailedStepEvidence> failedSteps,
+        List<SimilarCaseEvidence> similarCases,
+        CancellationToken ct)
+    {
+        var response = await PostJsonAsync("/api/attribute-failure",
+            new { test_case = testCase, failed_steps = failedSteps, similar_cases = similarCases, llm_config = await GetLlmConfigAsync(ct) }, ct);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: ct);
+        return MapAttributedResult(doc?.RootElement ?? default);
+    }
+
+    /// <summary>
+    /// 把 <c>/api/attribute-failure</c> 的响应 JSON 映射为 <see cref="AttributedResultDto"/>。
+    /// 公开仅为可测（同 MetricsEndpoint.StatusLabel 的做法）——单测用 HttpMessageHandler 桩喂入
+    /// 各种响应即可钉死「fix_category 解析 / proposed_fixes 过滤 / 未知值兜底」。
+    /// </summary>
+    public static AttributedResultDto MapAttributedResult(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("category", out var category))
+            throw new AIWorkerException("AI Worker 归因响应格式无效");
+
+        var fixCategory = FixCategory.Unknown;
+        if (root.TryGetProperty("fix_category", out var fc) && fc.ValueKind == JsonValueKind.String &&
+            Enum.TryParse<FixCategory>(fc.GetString(), ignoreCase: true, out var parsed))
+            fixCategory = parsed;
+
+        var fixes = new List<FixActionDto>();
+        if (root.TryGetProperty("proposed_fixes", out var fixesEl) && fixesEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in fixesEl.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                    continue;
+                var actionType = GetString(item, "action_type");
+                if (string.IsNullOrEmpty(actionType))
+                    continue;
+                int? stepOrder = item.TryGetProperty("step_order", out var so) && so.ValueKind == JsonValueKind.Number
+                    ? so.GetInt32() : null;
+                var prms = new Dictionary<string, object>();
+                if (item.TryGetProperty("params", out var pEl) && pEl.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var p in pEl.EnumerateObject())
+                        prms[p.Name] = p.Value.ValueKind == JsonValueKind.String
+                            ? p.Value.GetString() ?? string.Empty
+                            : p.Value.GetRawText();
+                }
+                var conf = item.TryGetProperty("confidence", out var cf) && cf.ValueKind == JsonValueKind.Number
+                    ? (float)cf.GetDouble() : 0f;
+                fixes.Add(new FixActionDto(actionType, stepOrder, prms, conf));
+            }
+        }
+
+        return new AttributedResultDto(
+            category.GetString() ?? "其它",
+            GetString(root, "root_cause"),
+            root.TryGetProperty("confidence", out var conf2) && conf2.ValueKind == JsonValueKind.Number ? (float)conf2.GetDouble() : 0f,
+            GetString(root, "suggested_fix"),
+            root.TryGetProperty("retry_recommended", out var retry) && retry.ValueKind == JsonValueKind.True,
+            fixCategory,
+            fixes,
+            root.TryGetProperty("needs_human_approval", out var needs) && needs.ValueKind == JsonValueKind.True,
+            root.TryGetProperty("approval_reason", out var ar) && ar.ValueKind == JsonValueKind.String ? ar.GetString() : null);
+    }
+
+    /// <summary>
+    /// M8 Planner（Phase 3）：按测试目标 + 失败历史生成/重构步骤序列。
+    /// 返回结构与 <see cref="GenerateAsync"/> 一致（复用 MapCase 做步骤映射）。
+    /// </summary>
+    public async Task<PlanResultDto> PlanAsync(
+        string requirement, string? baseUrl, string? failureContext,
+        IReadOnlyList<object>? previousAttempts, CancellationToken ct)
+    {
+        var response = await PostJsonAsync("/api/plan-steps", new
+        {
+            requirement,
+            base_url = baseUrl,
+            failure_context = failureContext,
+            previous_attempts = previousAttempts ?? new List<object>(),
+            min_cases = 1,
+            llm_config = await GetLlmConfigAsync(ct),
+        }, ct);
+
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: ct);
+        var cases = new List<GeneratedCaseDto>();
+        if (doc is not null && doc.RootElement.TryGetProperty("cases", out var arr) &&
+            arr.ValueKind == JsonValueKind.Array)
+            cases = arr.EnumerateArray().Select(MapCase).Where(c => c is not null).Select(c => c!).ToList();
+        return new PlanResultDto(cases, 1f, Array.Empty<string>());
+    }
+
+    /// <summary>
     /// 打开与 AI Worker 的流式对话连接（SSE），由调用方直接把响应体裁剪转发给浏览器。
     /// </summary>
     public async Task<HttpResponseMessage> StreamChatAsync(ChatStreamRequestDto request, CancellationToken ct)
@@ -156,6 +253,10 @@ public class AIClient
             images = request.Images ?? new List<string>(),
             llm_config = await GetLlmConfigAsync(ct),
         };
+
+        // M8：对话同样是 AI 路径，纳入统一熔断
+        if (!_breaker.AllowCall())
+            throw new AIWorkerException("AI 服务已熔断（连续不可用），本次调用已短路");
 
         HttpResponseMessage response;
         try
@@ -169,20 +270,24 @@ public class AIClient
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            _breaker.OnFailure();
             throw new AIWorkerException("AI Worker 调用超时");
         }
         catch (HttpRequestException ex)
         {
+            _breaker.OnFailure();
             throw new AIWorkerException($"AI Worker 连接失败: {ex.Message}");
         }
 
         if (!response.IsSuccessStatusCode)
         {
+            _breaker.OnFailure();
             var body = await response.Content.ReadAsStringAsync(ct);
             var detail = body.Length > 200 ? body[..200] : body;
             response.Dispose();
             throw new AIWorkerException($"AI Worker 调用失败 ({(int)response.StatusCode}): {detail}");
         }
+        _breaker.OnSuccess();
         return response;
     }
 
@@ -311,6 +416,11 @@ public class AIClient
 
     private async Task<HttpResponseMessage> PostJsonAsync<T>(string path, T payload, CancellationToken ct)
     {
+        // M8：这里是**所有 AI 调用的统一入口**（生成/定位/诊断/归因/规划/断言/视觉），
+        // 可用性熔断在此集中生效：熔断打开时**不发起请求**直接短路，省掉注定超时的那次等待。
+        if (!_breaker.AllowCall())
+            throw new AIWorkerException("AI 服务已熔断（连续不可用），本次调用已短路");
+
         HttpResponseMessage response;
         try
         {
@@ -318,18 +428,22 @@ public class AIClient
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            _breaker.OnFailure();
             throw new AIWorkerException("AI Worker 调用超时");
         }
         catch (HttpRequestException ex)
         {
+            _breaker.OnFailure();
             throw new AIWorkerException($"AI Worker 连接失败: {ex.Message}");
         }
         if (!response.IsSuccessStatusCode)
         {
+            _breaker.OnFailure();
             var body = await response.Content.ReadAsStringAsync(ct);
             var detail = body.Length > 200 ? body[..200] : body;
             throw new AIWorkerException($"AI Worker 调用失败 ({(int)response.StatusCode}): {detail}");
         }
+        _breaker.OnSuccess();
         return response;
     }
 

@@ -137,14 +137,19 @@ public class ReportAggregator
                 DateTime.Now, expiresAt, true, EmptyOverview(), [], [], [], [], null, null, null);
 
         var rounds = await LoadPlanRoundsAsync(planId, ct);
+        // Agent 自愈通过是否计入达标（项目级，默认不计入）——分享报告与平台内判定必须同口径
+        var treatAgentHealed = await _db.Projects.AsNoTracking()
+            .Where(p => p.Id == plan.ProjectId)
+            .Select(p => p.TreatAgentHealedAsPass)
+            .FirstOrDefaultAsync(ct);
         var gate = PlanGateEvaluator.Evaluate(plan.Name, plan.ReleaseName,
             plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure,
-            plan.GateMode, rounds);
+            plan.GateMode, rounds, treatAgentHealedAsPass: treatAgentHealed);
 
         var trends = rounds.Select(r =>
         {
             var (_, passRate, _, _, denominator, _, _) = PlanGateEvaluator.Judge(
-                r, plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure);
+                r, plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure, treatAgentHealed);
             // 趋势图按「日期」聚合，这里一轮一个点，用完成时间（未完成则用开始时间）
             var at = r.CompletedAt ?? r.StartedAt;
             return new TrendPointDto(at.ToString("MM-dd HH:mm"), r.Passed, r.Failed + r.Error,

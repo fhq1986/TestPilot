@@ -15,7 +15,9 @@ public record SettingsView(
     bool SsoWecomEnabled, string SsoWecomCorpId, string SsoWecomAgentId,
     string SsoWecomSecretMasked, bool HasSsoWecomSecret,
     bool SsoDingtalkEnabled, string SsoDingtalkClientId,
-    string SsoDingtalkClientSecretMasked, bool HasSsoDingtalkClientSecret);
+    string SsoDingtalkClientSecretMasked, bool HasSsoDingtalkClientSecret,
+    // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
+    bool AgentLoopEnabled);
 
 /// <summary>Webhook 渠道视图：地址脱敏 + 是否已配置</summary>
 public record NotifyChannelView(string WebhookMasked, bool Configured);
@@ -33,7 +35,9 @@ public record UpdateSettingsRequest(
     bool? SsoWecomEnabled, string? SsoWecomCorpId, string? SsoWecomAgentId, string? SsoWecomSecret,
     bool? SsoDingtalkEnabled, string? SsoDingtalkClientId, string? SsoDingtalkClientSecret,
     /// <summary>置空 Webhook 地址（前端「清除」按钮用），如 "wecom" / "dingtalk" / "feishu"</summary>
-    string? ClearWebhook);
+    string? ClearWebhook,
+    /// <summary>M8 Agent 自愈闭环系统级总开关（系统配置页）</summary>
+    bool? AgentLoopEnabled);
 
 public record TestConnectionResult(bool Ok, string Model, int? LatencyMs, string? Message);
 

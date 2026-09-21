@@ -49,5 +49,11 @@ public class SystemConfig
     public string SsoDingtalkClientId { get; set; } = string.Empty;
     public string SsoDingtalkClientSecret { get; set; } = string.Empty;
 
+    // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
+    // 与 SSO 同规：系统配置页可改、保存即生效、数据库为权威。默认关。
+    // 这是总闸——关闭后所有项目都不跑 Agent Loop（项目级 AgentLoopEnabled 再叠加一层与门）。
+    /// <summary>是否启用 Agent 失败自愈闭环（系统级总开关）</summary>
+    public bool AgentLoopEnabled { get; set; }
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

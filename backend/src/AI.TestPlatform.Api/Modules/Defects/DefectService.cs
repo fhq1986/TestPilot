@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Common;
@@ -420,7 +420,8 @@ public class DefectService
             LinkUrl: $"/defects?openDefect={defect.Id}",
             LinkLabel: "查看缺陷",
             SourceType: "Defect",
-            SourceId: defect.Id), ct);
+            SourceId: defect.Id,
+            ProjectId: defect.ProjectId), ct);
     }
 
     private async Task<string?> DisplayNameAsync(Guid? userId, CancellationToken ct)
@@ -584,7 +585,8 @@ public class DefectService
                 LinkUrl: $"/defects?openDefect={defect.Id}",
                 LinkLabel: "查看缺陷",
                 SourceType: "Defect",
-                SourceId: defect.Id), ct);
+                SourceId: defect.Id,
+                ProjectId: defect.ProjectId), ct);
         }
 
         return toVerify.Count;

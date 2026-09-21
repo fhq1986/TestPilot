@@ -43,6 +43,12 @@
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="更新时间" width="180">
             <template #default="{ row }">
               {{ formatDateTime(row.updatedAt) }}
@@ -95,8 +101,8 @@
         @size-change="load(1)" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑项目' : '新建项目'" width="520px" @closed="resetForm">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-width="94px">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑项目' : '新建项目'" width="60%" @closed="resetForm" top="2vh">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="150px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入项目名称" />
         </el-form-item>
@@ -137,6 +143,18 @@
         </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="3" placeholder="项目描述（可选）" />
+        </el-form-item>
+        <el-form-item label="Agent 自愈闭环">
+          <el-switch v-model="form.agentLoopEnabled" />
+          <div class="field-hint">
+            开启后，本项目测试用例执行失败会尝试由 AI 归因并自动修复后重跑；还需在「系统配置 → Agent 自愈闭环」开启系统级总开关，二者同时开启才生效。默认关闭。
+          </div>
+        </el-form-item>
+        <el-form-item label="自愈通过计入达标">
+          <el-switch v-model="form.treatAgentHealedAsPass" :disabled="!form.agentLoopEnabled" />
+          <div class="field-hint">
+            默认关闭：Agent 自愈后的「通过」不计入测试计划达标，避免「把用例改松即通过」污染验收质量。
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -395,6 +413,9 @@ const form = reactive({
   managerId: '' as string,
   testOwnerId: '' as string,
   developerOwnerId: '' as string,
+  // M8 Agent 自愈（项目级）
+  agentLoopEnabled: false,
+  treatAgentHealedAsPass: false,
 })
 const formRules: FormRules = {
   name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
@@ -429,6 +450,8 @@ const openEdit = (row: Project) => {
   form.managerId = row.managerId ?? ''
   form.testOwnerId = row.testOwnerId ?? ''
   form.developerOwnerId = row.developerOwnerId ?? ''
+  form.agentLoopEnabled = row.agentLoopEnabled ?? false
+  form.treatAgentHealedAsPass = row.treatAgentHealedAsPass ?? false
   void loadUserOptions()
   dialogVisible.value = true
 }
@@ -439,6 +462,8 @@ const resetForm = () => {
   form.managerId = ''
   form.testOwnerId = ''
   form.developerOwnerId = ''
+  form.agentLoopEnabled = false
+  form.treatAgentHealedAsPass = false
   formRef.value?.clearValidate()
 }
 
@@ -458,6 +483,8 @@ const handleSave = async () => {
       managerId: form.managerId || null,
       testOwnerId: form.testOwnerId || null,
       developerOwnerId: form.developerOwnerId || null,
+      agentLoopEnabled: form.agentLoopEnabled,
+      treatAgentHealedAsPass: form.treatAgentHealedAsPass,
     }
 
     if (editing.value) {

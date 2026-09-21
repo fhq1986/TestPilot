@@ -75,6 +75,13 @@ public class InAppNotification
     public string? SourceType { get; set; }
     public Guid? SourceId { get; set; }
 
+    /// <summary>
+    /// 反规范化的项目 Id。消息是高频查询对象（每次打开消息中心都拉），
+    /// 按 SourceType/SourceId 去各表 JOIN 反查项目代价太高，因此在写入时直接带上。
+    /// 系统类消息（没有具体项目归属）可为 null。
+    /// </summary>
+    public Guid? ProjectId { get; set; }
+
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
 

@@ -288,6 +288,7 @@ public class ScheduleService
             LinkUrl: "/schedules",
             LinkLabel: "查看定时任务",
             SourceType: "Schedule",
-            SourceId: schedule.Id), ct);
+            SourceId: schedule.Id,
+            ProjectId: schedule.ProjectId), ct);
     }
 }

@@ -80,8 +80,17 @@ export interface NotificationItem {
   linkLabel?: string | null
   sourceType?: string | null
   sourceId?: string | null
+  /** 反规范化的项目 Id，用于前端按项目筛选 */
+  projectId?: string | null
+  /** 项目显示名（后端填充） */
+  projectName?: string | null
   isRead: boolean
+  /** 发送时间 */
   createdAt: string
+  /** 接收人 Id（superadmin 全域查看时用于区分） */
+  userId?: string
+  /** 接收人显示名（仅 superadmin 全域查看时后端才填充） */
+  userName?: string | null
 }
 
 export interface NotificationCategoryCount {

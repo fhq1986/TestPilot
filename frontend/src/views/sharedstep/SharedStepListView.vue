@@ -3,7 +3,7 @@
     <el-card class="list-card">
       <div class="toolbar">
         <div class="toolbar-left">
-          <el-select v-model="projectId" placeholder="全部项目" clearable class="w-200" @change="load">
+          <el-select v-model="projectId" placeholder="全部项目" clearable class="w-200" @change="() => load(1)">
             <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
           <el-input v-model="search" placeholder="搜索名称" clearable class="w-200" @keyup.enter="load" @clear="load" />
@@ -55,6 +55,12 @@
                 {{ row.usedByCaseCount }} 个用例
               </el-button>
               <span v-else class="muted">未被引用</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column label="更新时间" width="170">

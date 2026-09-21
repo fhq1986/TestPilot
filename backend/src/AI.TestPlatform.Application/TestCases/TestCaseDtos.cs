@@ -100,7 +100,9 @@ public record TestCaseSummaryDto(
     /// 列表的「最近执行结果」列用它——比"草稿/启用"更能说明这条用例现在到底行不行</summary>
     ExecutionStatus? LatestExecutionStatus = null,
     /// <summary>最近一次执行的时间，与 <see cref="LatestExecutionStatus"/> 配套展示</summary>
-    DateTime? LastExecutedAt = null);
+    DateTime? LastExecutedAt = null,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);
 
 public record TestCaseDto(
     Guid Id, Guid ProjectId, string Name, TestType Type, string? Description,

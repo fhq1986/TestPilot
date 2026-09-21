@@ -63,6 +63,92 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.ToTable("AIElementCaches");
                 });
 
+            modelBuilder.Entity("AI.TestPlatform.Domain.Entities.AgentAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AppliedActions")
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("AppliedSuccessfully")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool?>("Approved")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<float>("Confidence")
+                        .HasColumnType("real");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DiagnosisRaw")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FailureAfterFix")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("FailureEvidence")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("FixCategory")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FixSummary")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("LlmInputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LlmModel")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("LlmOutputTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("NeedsApproval")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Persisted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Result")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TargetStepOrder")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExecutionId");
+
+                    b.HasIndex("ExecutionId", "AttemptNumber")
+                        .IsUnique();
+
+                    b.ToTable("AgentAttempts");
+                });
+
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.ApiDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -257,6 +343,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -281,6 +370,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -343,6 +435,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("VerifiedAt")
                         .HasColumnType("timestamp with time zone");
@@ -478,6 +573,24 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<string>("AISuggestedFix")
                         .HasColumnType("text");
+
+                    b.Property<int>("AgentBudgetUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int?>("AgentFinalVerdict")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("AgentHealed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("AgentLoopCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("Branch")
                         .HasMaxLength(200)
@@ -675,6 +788,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<int?>("DurationMs")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ElementSnapshot")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
 
@@ -752,6 +868,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<string>("LinkUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
@@ -860,6 +979,14 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("AgentLoopEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("AgentLoopSuspendedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -884,8 +1011,16 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<Guid?>("TestOwnerId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("TreatAgentHealedAsPass")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -1093,8 +1228,17 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ActualEndDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ActualStartDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
@@ -1103,6 +1247,12 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("PlanEndDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PlanStartDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Priority")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -1110,10 +1260,19 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -1134,6 +1293,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("CronExpression")
                         .IsRequired()
@@ -1192,6 +1354,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EnvironmentId");
@@ -1229,6 +1394,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -1274,6 +1442,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("AgentLoopEnabled")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("AiApiKey")
                         .IsRequired()
@@ -1425,6 +1596,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("CustomFields")
                         .HasColumnType("jsonb");
 
@@ -1515,6 +1689,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Version")
                         .HasColumnType("integer");
 
@@ -1604,6 +1781,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("DefectGateEnabled")
                         .HasColumnType("boolean");
 
@@ -1651,6 +1831,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<Guid?>("RequirementId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1663,6 +1846,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EnvironmentId");
@@ -1670,6 +1856,8 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("ReleaseName");
+
+                    b.HasIndex("RequirementId");
 
                     b.HasIndex("ProjectId", "Status");
 
@@ -1808,6 +1996,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
@@ -1844,6 +2035,9 @@ namespace AI.TestPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -2063,6 +2257,17 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("SelectorHistory");
+                });
+
+            modelBuilder.Entity("AI.TestPlatform.Domain.Entities.AgentAttempt", b =>
+                {
+                    b.HasOne("AI.TestPlatform.Domain.Entities.Execution", "Execution")
+                        .WithMany()
+                        .HasForeignKey("ExecutionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Execution");
                 });
 
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.ApiDefinition", b =>
@@ -2681,11 +2886,18 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("AI.TestPlatform.Domain.Entities.Requirement", "Requirement")
+                        .WithMany("TestPlans")
+                        .HasForeignKey("RequirementId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Environment");
 
                     b.Navigation("Owner");
 
                     b.Navigation("Project");
+
+                    b.Navigation("Requirement");
                 });
 
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.TestPlanItem", b =>
@@ -2931,6 +3143,8 @@ namespace AI.TestPlatform.Infrastructure.Migrations
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.Requirement", b =>
                 {
                     b.Navigation("TestCases");
+
+                    b.Navigation("TestPlans");
                 });
 
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.SharedStepGroup", b =>

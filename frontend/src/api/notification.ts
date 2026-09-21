@@ -6,6 +6,10 @@ import type { NotificationItem, NotificationUnread } from '@/types/notification'
 export const getNotifications = (params: {
   unreadOnly?: boolean
   category?: number
+  projectId?: string
+  title?: string
+  dateFrom?: string
+  dateTo?: string
   page?: number
   pageSize?: number
 }) => request.get<unknown, PagedResult<NotificationItem>>('/notifications', { params })

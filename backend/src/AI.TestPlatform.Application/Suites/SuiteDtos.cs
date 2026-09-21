@@ -9,7 +9,9 @@ public record SuiteSummaryDto(
     DateTime? LastRunAt, Guid? LastSuiteRunId, int LastCreatedCount, string? LastError,
     DateTime CreatedAt, DateTime UpdatedAt,
     // 执行编排：失败策略（Continue / StopOnFailure）
-    SuiteFailurePolicy FailurePolicy = SuiteFailurePolicy.Continue);
+    SuiteFailurePolicy FailurePolicy = SuiteFailurePolicy.Continue,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);
 
 public record SuiteDetailDto(
     Guid Id, Guid ProjectId, string Name, string? Description, SuiteKind Kind,

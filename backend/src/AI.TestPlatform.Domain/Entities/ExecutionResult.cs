@@ -38,5 +38,12 @@ public class ExecutionResult
     /// <summary>AI 对差异的语义化说明（仅在判定为变化且开启 AI 说明时生成）</summary>
     public string? VisualNote { get; set; }
 
+    /// <summary>
+    /// M8：失败时采集的**页面可交互元素快照**（jsonb，`List&lt;InteractiveElement&gt;`）。
+    /// 归因证据没有 DOM 时，LLM 只能给"指导"而给不出具体定位符；带上这份清单它才能产出可用的 `locator_value`。
+    /// 仅失败步骤才有值，采集失败不影响执行主流程。
+    /// </summary>
+    public string? ElementSnapshot { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

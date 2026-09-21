@@ -80,6 +80,13 @@
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
+          <!-- 创建人（M8 审计字段）：历史行可能为空 -->
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="编号" width="130" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.caseCode" class="mono">{{ row.caseCode }}</span>

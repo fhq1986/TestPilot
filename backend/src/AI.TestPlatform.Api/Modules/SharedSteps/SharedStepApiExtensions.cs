@@ -3,7 +3,9 @@ using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
+using AI.TestPlatform.Api.Common;
 using FluentValidation;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace AI.TestPlatform.Api.Modules.SharedSteps;
@@ -14,12 +16,17 @@ public static class SharedStepApiExtensions
     public static RouteGroupBuilder MapSharedStepApi(this RouteGroupBuilder group)
     {
         // 分页 + 服务端筛选
+        // 防御性绑定：前端偶有把 GUID/空串塞进 page 查询参数（如 projectId 误传），
+        // 直接用 int 绑定会抛 BadHttpRequestException；先接 string 再 TryParse 回退
         group.MapGet("/", async (
-            Guid? projectId, string? search, int page, int pageSize,
+            [FromQuery] Guid? projectId,
+            [FromQuery] string? search,
+            [FromQuery] string? page,
+            [FromQuery] string? pageSize,
             TestDbContext db, CancellationToken ct) =>
         {
-            page = page < 1 ? 1 : page;
-            pageSize = pageSize is < 1 ? 20 : pageSize > 200 ? 200 : pageSize;
+            var p = int.TryParse(page, out var pv) && pv > 0 ? pv : 1;
+            var ps = int.TryParse(pageSize, out var psv) && psv >= 1 && psv <= 200 ? psv : 20;
 
             var query = db.SharedStepGroups.AsNoTracking().AsQueryable();
             if (projectId is not null) query = query.Where(g => g.ProjectId == projectId);
@@ -32,15 +39,19 @@ public static class SharedStepApiExtensions
             var total = await query.CountAsync(ct);
             var groups = await query
                 .OrderBy(g => g.Name)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
+                .Skip((p - 1) * ps)
+                .Take(ps)
                 .Select(g => new
                 {
                     g.Id, g.ProjectId, g.Name, g.Description,
                     ItemCount = g.Items.Count,
                     g.Variables, g.CreatedAt, g.UpdatedAt,
+                    g.CreatedById,
                 })
                 .ToListAsync(ct);
+
+            // 创建人显示名（M8 审计字段）：本页一次批量解析
+            var creatorNames = await UserNameResolver.ResolveAsync(db, groups.Select(g => g.CreatedById), ct);
 
             // 引用统计：一次分组查询拿到本页全部，避免每行一次 COUNT（N+1）
             var ids = groups.Select(g => g.Id).ToList();
@@ -55,9 +66,10 @@ public static class SharedStepApiExtensions
                 g.Id, g.ProjectId, g.Name, g.Description, g.ItemCount,
                 usageMap.GetValueOrDefault(g.Id),
                 g.Variables.Select(v => new SharedVariableDto(v.Name, v.Value)).ToList(),
-                g.CreatedAt, g.UpdatedAt)).ToList();
+                g.CreatedAt, g.UpdatedAt,
+                creatorNames.GetName(g.CreatedById))).ToList();
 
-            return Results.Ok(new PagedResult<SharedStepGroupView>(items, total, page, pageSize));
+            return Results.Ok(new PagedResult<SharedStepGroupView>(items, total, p, ps));
         }).WithPermission(Permission.ManageSharedSteps);
 
         // 供「插入共享步骤」下拉用：只回 id/名称/步骤数，一次拿全（组数量天然有限）
@@ -247,7 +259,9 @@ public record SharedStepGroupRequest(
 public record SharedStepGroupView(
     Guid Id, Guid ProjectId, string Name, string? Description,
     int ItemCount, int UsedByCaseCount, IReadOnlyList<SharedVariableDto> Variables,
-    DateTime CreatedAt, DateTime? UpdatedAt);
+    DateTime CreatedAt, DateTime? UpdatedAt,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);
 
 public record SharedStepGroupDetail(
     Guid Id, Guid ProjectId, string Name, string? Description,

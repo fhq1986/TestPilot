@@ -3,7 +3,9 @@ namespace AI.TestPlatform.Application.DataSets;
 public record DataSetSummaryDto(
     Guid Id, Guid ProjectId, string? ProjectName, string Name, string? Description,
     int ColumnCount, int RowCount, int UsedByCaseCount,
-    DateTime CreatedAt, DateTime UpdatedAt);
+    DateTime CreatedAt, DateTime UpdatedAt,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);
 
 public record DataSetDto(
     Guid Id, Guid ProjectId, string Name, string? Description,

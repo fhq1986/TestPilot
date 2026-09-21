@@ -77,7 +77,8 @@ public class NotificationService
                 LinkUrl: $"/executions/{execution.Id}",
                 LinkLabel: "查看执行",
                 SourceType: "Execution",
-                SourceId: execution.Id), ct);
+                SourceId: execution.Id,
+                ProjectId: execution.TestCase?.ProjectId), ct);
 
             // 视觉差异单独一条：性质是「有事等你决定」，不是「跑完了」
             await NotifyVisualChangesAsync(execution, ct);
@@ -122,7 +123,8 @@ public class NotificationService
             LinkUrl: $"/executions/{execution.Id}",
             LinkLabel: "查看比对",
             SourceType: "Execution",
-            SourceId: execution.Id), ct);
+            SourceId: execution.Id,
+            ProjectId: execution.TestCase?.ProjectId), ct);
     }
 
     /// <summary>站内消息的一行摘要：消息中心里列表很窄，只放最能说明问题的三个数</summary>
@@ -192,7 +194,8 @@ public class NotificationService
             LinkUrl: $"/test-plans/{plan.Id}",
             LinkLabel: "查看计划",
             SourceType: "TestPlan",
-            SourceId: plan.Id), ct);
+            SourceId: plan.Id,
+            ProjectId: plan.ProjectId), ct);
 
         // ② 外部渠道（受总开关与「仅失败时通知」约束）
         var config = await _settings.GetAsync(ct);
@@ -827,7 +830,7 @@ public class NotificationService
             var targets = users.Where(u => u.Id != comment.AuthorId).ToList();
             if (targets.Count == 0) return;
 
-            var (targetLabel, targetTitle) = await ResolveCommentTargetAsync(comment.Target, comment.TargetId, ct);
+            var (targetLabel, targetTitle, targetProjectId) = await ResolveCommentTargetAsync(comment.Target, comment.TargetId, ct);
             if (targetLabel is null) return;
 
             var authorName = comment.Author?.DisplayName ?? "同事";
@@ -841,7 +844,8 @@ public class NotificationService
                 LinkUrl: CommentTargetLink(comment.Target, comment.TargetId),
                 LinkLabel: "查看评论",
                 SourceType: comment.Target.ToString(),
-                SourceId: comment.TargetId), ct);
+                SourceId: comment.TargetId,
+                ProjectId: targetProjectId), ct);
 
             // ② 邮件（只有配了 SMTP 且用户填了邮箱才发）
             var config = await _settings.GetAsync(ct);
@@ -877,32 +881,42 @@ public class NotificationService
         _ => "/dashboard",
     };
 
-    /// <summary>解析评论挂载对象的展示名（用例名/缺陷标题/计划名）。对象不存在返回 (null, null)。</summary>
-    private async Task<(string? Label, string? Title)> ResolveCommentTargetAsync(
+    /// <summary>解析评论挂载对象的展示名 + 项目 Id（用于消息中心项目筛选）。对象不存在返回全 null。</summary>
+    private async Task<(string? Label, string? Title, Guid? ProjectId)> ResolveCommentTargetAsync(
         CommentTarget target, Guid targetId, CancellationToken ct)
     {
         string? label, title;
+        Guid? projectId = null;
         switch (target)
         {
             case CommentTarget.TestCase:
                 label = "用例";
-                title = await _db.TestCases.AsNoTracking()
-                    .Where(t => t.Id == targetId).Select(t => t.Name).FirstOrDefaultAsync(ct);
+                var tc = await _db.TestCases.AsNoTracking()
+                    .Where(t => t.Id == targetId)
+                    .Select(t => new { t.Name, t.ProjectId }).FirstOrDefaultAsync(ct);
+                title = tc?.Name;
+                projectId = tc?.ProjectId;
                 break;
             case CommentTarget.Defect:
                 label = "缺陷";
-                title = await _db.Defects.AsNoTracking()
-                    .Where(d => d.Id == targetId).Select(d => d.Title).FirstOrDefaultAsync(ct);
+                var d = await _db.Defects.AsNoTracking()
+                    .Where(x => x.Id == targetId)
+                    .Select(x => new { x.Title, x.ProjectId }).FirstOrDefaultAsync(ct);
+                title = d?.Title;
+                projectId = d?.ProjectId;
                 break;
             case CommentTarget.TestPlan:
                 label = "测试计划";
-                title = await _db.TestPlans.AsNoTracking()
-                    .Where(p => p.Id == targetId).Select(p => p.Name).FirstOrDefaultAsync(ct);
+                var p = await _db.TestPlans.AsNoTracking()
+                    .Where(x => x.Id == targetId)
+                    .Select(x => new { x.Name, x.ProjectId }).FirstOrDefaultAsync(ct);
+                title = p?.Name;
+                projectId = p?.ProjectId;
                 break;
             default:
-                return (null, null);
+                return (null, null, null);
         }
-        return title is null ? (null, null) : (label, title);
+        return title is null ? (null, null, null) : (label, title, projectId);
     }
 
     private async Task<ChannelResult> SendMailAsync(SystemConfig config,

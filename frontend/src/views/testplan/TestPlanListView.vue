@@ -97,6 +97,15 @@
           <el-table-column label="负责人" width="110">
             <template #default="{ row }">{{ row.ownerName || '—' }}</template>
           </el-table-column>
+          <el-table-column label="需求" width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-link v-if="row.requirementId && row.requirementTitle" type="primary"
+                @click="goRequirement(row.requirementId)">
+                {{ row.requirementTitle }}
+              </el-link>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="周期" width="180">
             <template #default="{ row }">
               <span v-if="row.startsAt || row.endsAt" class="period">
@@ -104,6 +113,15 @@
               </span>
               <span v-else class="muted">未设置</span>
             </template>
+          </el-table-column>
+          <el-table-column label="创建人" width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.createdByName">{{ row.createdByName }}</span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="150">
+            <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="270" fixed="right">
             <template #default="{ row }">
@@ -183,6 +201,13 @@
             </el-option>
           </el-select>
           <div v-if="editingId" class="form-hint">计划创建后不能换项目（已产生的轮次与报告都挂在原项目下）。</div>
+        </el-form-item>
+        <el-form-item label="需求">
+          <el-select v-model="form.requirementId" filterable clearable :loading="requirementLoading"
+            :placeholder="form.projectId ? '选择关联的需求（可选）' : '请先选择所属项目'"
+            class="w-full" @visible-change="(v: boolean) => v && form.projectId && void loadRequirementOptions()">
+            <el-option v-for="r in requirementOptions" :key="r.id" :label="r.title" :value="r.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="计划名称" required>
           <el-input v-model="form.name" placeholder="例如 v2.3.0 发版验收" />
@@ -276,12 +301,40 @@
         <el-button type="primary" @click="confirmStartRound">开始新一轮</el-button>
       </template>
     </el-dialog>
+
+    <!-- 需求详情弹窗（只读） -->
+    <el-dialog v-model="reqDialogVisible" title="需求详情" width="640px">
+      <div v-if="reqLoading" class="muted">加载中…</div>
+      <div v-else-if="reqDetail" class="req-detail">
+        <h3 class="req-title">{{ reqDetail.title }}</h3>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="优先级">{{ reqDetail.priority || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="外部编号">{{ reqDetail.externalKey || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag size="small">{{ REQUIREMENT_STATUS_LABELS[reqDetail.status ?? 0] ?? '—' }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="创建人">{{ reqDetail.createdByName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="计划开始">{{ reqDetail.planStartDate || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="计划结束">{{ reqDetail.planEndDate || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="实际开始">{{ reqDetail.actualStartDate || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="实际结束">{{ reqDetail.actualEndDate || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间" :span="2">{{ reqDetail.createdAt }}</el-descriptions-item>
+        </el-descriptions>
+        <div v-if="reqDetail.description" class="req-desc">
+          <div class="mcl-label">描述</div>
+          <div v-html="reqDetail.description"></div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="reqDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, toRefs } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
@@ -291,10 +344,12 @@ import {
 import { getProjects } from '@/api/project'
 import { getEnvironments } from '@/api/environment'
 import { listUserOptionsApi } from '@/api/auth'
+import { listRequirementsSimple, getRequirement } from '@/api/requirement'
 import { useBatchDelete } from '@/composables/useBatchDelete'
 import { useRowSelection } from '@/composables/useRowSelection'
 import { usePagedList } from '@/composables/usePagedList'
 import { TestPlanStatus, TEST_PLAN_STATUS_LABELS as STATUS_LABELS, type TestPlanSummary } from '@/types/testPlan'
+import { REQUIREMENT_STATUS_LABELS, type Requirement } from '@/types/requirement'
 import type { Project } from '@/types/project'
 import type { EnvironmentView } from '@/types/environment'
 import type { UserOption } from '@/types/auth'
@@ -321,6 +376,7 @@ const browserOptions = [
 ]
 
 const router = useRouter()
+const route = useRoute()
 
 /** 窄屏（< 1024px）：表格换成卡片形态，见下方模板 */
 const { isMobile } = useBreakpoint()
@@ -336,6 +392,8 @@ const users = ref<UserOption[]>([])
 const releases = ref<string[]>([])
 const statusCounts = ref<Record<string, number>>({})
 const saving = ref(false)
+const requirementOptions = ref<{ id: string; title: string }[]>([])
+const requirementLoading = ref(false)
 // 开轮前环境选择（计划未配默认环境时弹出）：envOptions/envLoading 复用上方"默认环境"下拉的同一份
 const envDialogVisible = ref(false)
 const selectedEnvId = ref('')
@@ -346,12 +404,14 @@ const projectId = ref('')
 const statusFilter = ref<number | ''>('')
 const releaseFilter = ref('')
 const search = ref('')
+const requirementId = ref('')
 // 分页列表状态机（页码/页大小/总数/loading），见 composables/usePagedList.ts
 const list = usePagedList<TestPlanSummary>((p, ps) => listTestPlansApi({
   projectId: projectId.value || undefined,
   status: statusFilter.value === '' ? undefined : (statusFilter.value as 0),
   releaseName: releaseFilter.value || undefined,
   search: search.value.trim() || undefined,
+  requirementId: requirementId.value || undefined,
   page: p,
   pageSize: ps,
 }), { pageSize: 20 })
@@ -367,6 +427,7 @@ const form = reactive({
   name: '', description: '', releaseName: '', ownerId: '',
   allowErrors: false, excludeFlakyFromFailure: true, gateMode: 0, defectGateEnabled: false,
   environmentId: '', browsers: [] as string[],
+  requirementId: '',
 })
 
 const progressPercent = (row: TestPlanSummary) => {
@@ -447,11 +508,29 @@ async function loadEnvironmentsFor(target: string) {
   }
 }
 
+async function loadRequirementOptions() {
+  if (!form.projectId) {
+    requirementOptions.value = []
+    return
+  }
+  requirementLoading.value = true
+  try {
+    requirementOptions.value = await listRequirementsSimple({ projectId: form.projectId })
+  } catch {
+    requirementOptions.value = []
+  } finally {
+    requirementLoading.value = false
+  }
+}
+
 async function onProjectChange(target: string) {
-  // 换项目后旧环境下拉里选中的那一条已经不属于当前项目，必须清掉，
-  // 否则会把"别的项目下的环境 id"提交到后端，成为一条永远对不上的引用
   form.environmentId = ''
-  await loadEnvironmentsFor(target)
+  form.requirementId = ''
+  requirementOptions.value = []
+  await Promise.all([
+    loadEnvironmentsFor(target),
+    loadRequirementOptions(),
+  ])
 }
 
 function resetForm() {
@@ -462,31 +541,34 @@ function resetForm() {
     projectId: '', name: '', description: '', releaseName: '', ownerId: '',
     allowErrors: false, excludeFlakyFromFailure: true, gateMode: 0, defectGateEnabled: false,
     environmentId: '', browsers: [],
+    requirementId: '',
   })
   envOptions.value = []
+  requirementOptions.value = []
 }
 
 function openCreate() {
   resetForm()
-  // 筛选区选了项目就沿用（"在哪个项目下点新建"就是那个项目），没选就留空由用户自己挑——
-  // 这里不再回落到"第一个项目"，那等于替用户在多个项目里替他做选择
   form.projectId = projectId.value
   projectOptions.value = projects.value.slice()
-  void loadEnvironmentsFor(form.projectId)
+  if (form.projectId) {
+    void loadEnvironmentsFor(form.projectId)
+    void loadRequirementOptions()
+  }
   dialogVisible.value = true
 }
 
 function openEdit(row: TestPlanSummary) {
   editingId.value = row.id
   form.projectId = row.projectId
-  // 编辑时项目不可变更，选项里只要有当前这一个就够（避免列表未加载时显示成 id）
   const current = projects.value.find((p) => p.id === row.projectId)
   projectOptions.value = current ? [current] : []
-  void loadEnvironmentsFor(row.projectId)
+  void Promise.all([loadEnvironmentsFor(row.projectId), loadRequirementOptions()])
   form.name = row.name
   form.description = row.description ?? ''
   form.releaseName = row.releaseName ?? ''
   form.ownerId = row.ownerId ?? ''
+  form.requirementId = row.requirementId ?? ''
   form.allowErrors = row.allowErrors
   form.excludeFlakyFromFailure = row.excludeFlakyFromFailure
   form.gateMode = row.gateMode
@@ -519,6 +601,7 @@ async function handleSave() {
     defectGateEnabled: form.defectGateEnabled,
     environmentId: form.environmentId || null,
     browsers: form.browsers.length > 0 ? form.browsers : null,
+    requirementId: form.requirementId || null,
   }
 
   saving.value = true
@@ -543,6 +626,25 @@ async function handleSave() {
 
 function goDetail(row: TestPlanSummary) {
   router.push(`/test-plans/${row.id}`)
+}
+
+// 需求详情弹窗（只读）
+const reqDialogVisible = ref(false)
+const reqLoading = ref(false)
+const reqDetail = ref<Requirement | null>(null)
+
+async function goRequirement(id: string) {
+  reqDialogVisible.value = true
+  reqLoading.value = true
+  reqDetail.value = null
+  try {
+    reqDetail.value = await getRequirement(id)
+  } catch {
+    ElMessage.warning('需求不存在或无权限查看')
+    reqDialogVisible.value = false
+  } finally {
+    reqLoading.value = false
+  }
 }
 
 async function handleStartRound(row: TestPlanSummary) {
@@ -618,6 +720,10 @@ const { deleting, selectedRows, onSelectionChange, handleBatchDelete } = useBatc
 })
 
 onMounted(async () => {
+  // 从跳转 query 里取 requirementId / projectId 做预选筛选
+  const q = route.query
+  if (typeof q.requirementId === 'string') requirementId.value = q.requirementId
+  if (typeof q.projectId === 'string') projectId.value = q.projectId
   await loadOptions()
   await Promise.all([load(), loadMeta()])
 })
@@ -774,4 +880,9 @@ onMounted(async () => {
   line-height: 1.7;
   margin-top: 2px;
 }
+
+.req-detail .req-title { margin: 0 0 12px; font-size: 18px; }
+.req-detail .req-desc { margin-top: 14px; }
+.req-detail .req-desc .mcl-label { color: #9aa2ae; font-size: 12px; margin-bottom: 4px; }
+.req-detail .req-desc :deep(img) { max-width: 100%; }
 </style>

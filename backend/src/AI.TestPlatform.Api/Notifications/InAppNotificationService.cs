@@ -19,7 +19,8 @@ public sealed record NotificationDraft(
     string? LinkUrl = null,
     string? LinkLabel = null,
     string? SourceType = null,
-    Guid? SourceId = null);
+    Guid? SourceId = null,
+    Guid? ProjectId = null);
 
 /// <summary>
 /// 站内消息（消息中心）写入与推送。
@@ -87,6 +88,7 @@ public class InAppNotificationService
                 LinkLabel = Truncate(draft.LinkLabel, 30),
                 SourceType = Truncate(draft.SourceType, 50),
                 SourceId = draft.SourceId,
+                ProjectId = draft.ProjectId,
                 CreatedAt = DateTime.UtcNow,
             }).ToList();
 
@@ -151,9 +153,9 @@ public class InAppNotificationService
         }
     }
 
-    internal static NotificationDto ToDto(InAppNotification n) => new(
+    internal static NotificationDto ToDto(InAppNotification n, string? userName = null, string? projectName = null) => new(
         n.Id, (int)n.Category, (int)n.Level, n.Title, n.Body, n.LinkUrl, n.LinkLabel,
-        n.SourceType, n.SourceId, n.IsRead, n.CreatedAt);
+        n.SourceType, n.SourceId, n.ProjectId, n.IsRead, n.CreatedAt, n.UserId, userName, projectName);
 
     private static string? Truncate(string? value, int max) =>
         string.IsNullOrEmpty(value) || value.Length <= max ? value : value[..max];
@@ -170,8 +172,17 @@ public sealed record NotificationDto(
     string? LinkLabel,
     string? SourceType,
     Guid? SourceId,
+    /// <summary>反规范化的项目 Id，用于前端按项目筛选</summary>
+    Guid? ProjectId,
     bool IsRead,
-    DateTime CreatedAt);
+    /// <summary>发送时间</summary>
+    DateTime CreatedAt,
+    /// <summary>接收人 Id（superadmin 全域查看时用于区分）</summary>
+    Guid UserId = default,
+    /// <summary>接收人显示名（仅 superadmin 全域查看时填充）</summary>
+    string? UserName = null,
+    /// <summary>项目显示名（仅 ProjectId 非空时后端填充）</summary>
+    string? ProjectName = null);
 
 /// <summary>未读数（GET /api/notifications/unread-count）</summary>
 public sealed record NotificationUnreadDto(int Total, IReadOnlyList<NotificationCategoryCount> ByCategory);

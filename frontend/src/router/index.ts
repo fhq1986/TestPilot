@@ -106,6 +106,12 @@ const router = createRouter({
           meta: { title: '执行详情', permission: Permission.ViewExecutions },
         },
         {
+          path: 'agent-approvals',
+          name: 'agent-approvals',
+          component: () => import('@/views/execution/AgentApprovalView.vue'),
+          meta: { title: 'Agent 审批', permission: Permission.ManageTestCases },
+        },
+        {
           path: 'schedules',
           name: 'schedules',
           component: () => import('@/views/schedule/ScheduleListView.vue'),

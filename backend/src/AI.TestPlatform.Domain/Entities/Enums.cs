@@ -154,3 +154,56 @@ public enum Permission
     ManageUsers     = 1 << 12,
     ViewAuditLog    = 1 << 13,
 }
+
+/// <summary>
+/// M8 Agent：失败归因给出的**修复类别**，决定"自动应用 / 需人工审批 / 不可修复"。
+///
+/// ⚠ 按 int 落库（AgentAttempts.FixCategory）：**只能追加末尾**，禁止改动既有序号，
+/// 否则历史归因记录会整体错位。数值与前端 `types/agent.ts` 必须同步（有单测钉住）。
+/// </summary>
+public enum FixCategory
+{
+    /// <summary>选择器更新——自动可修复（先走既有元素自愈链，耗尽才升级到本类）</summary>
+    LocatorUpdate = 0,
+    /// <summary>等待策略（加等待 / 改 WaitUntil）——自动可修复</summary>
+    WaitStrategy = 1,
+    /// <summary>步骤配置微调——自动可修复</summary>
+    StepConfigPatch = 2,
+
+    /// <summary>插入新步骤——改步骤结构，需人工审批</summary>
+    StepInsertion = 3,
+    /// <summary>删除步骤——破坏性，任何情况都需确认</summary>
+    StepDeletion = 4,
+    /// <summary>重排步骤顺序——可能掩盖 bug，需确认</summary>
+    StepReorder = 5,
+    /// <summary>放宽断言——降低测试质量，需确认</summary>
+    AssertRelaxation = 6,
+
+    /// <summary>目标应用本身有 bug——不修复</summary>
+    AppBug = 7,
+    /// <summary>环境问题（服务未起 / 网络）——不修复</summary>
+    EnvironmentIssue = 8,
+    /// <summary>测试数据问题——不修复</summary>
+    DataIssue = 9,
+    /// <summary>无法判断——不修复</summary>
+    Unknown = 10,
+}
+
+/// <summary>
+/// M8 Agent：一次修复尝试的最终结果。同样按 int 落库，只允许末尾追加。
+/// </summary>
+public enum AgentAttemptResult
+{
+    /// <summary>修复成功，后续步骤全部通过</summary>
+    Fixed = 0,
+    /// <summary>修好了这个步骤，但后续出现新的失败</summary>
+    Partial = 1,
+    /// <summary>修复动作应用后重跑仍失败</summary>
+    Failed = 2,
+    /// <summary>预算耗尽</summary>
+    BudgetExhausted = 3,
+    /// <summary>人工拒绝</summary>
+    Rejected = 4,
+    /// <summary>跳过（FixCategory 不可修复，或动作未通过安全校验）</summary>
+    Skipped = 5,
+}

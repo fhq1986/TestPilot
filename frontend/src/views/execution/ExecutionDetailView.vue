@@ -30,6 +30,9 @@
         <el-descriptions-item label="所属项目">{{ execution?.projectName || '—' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
+          <el-tag v-if="execution?.agentHealed" size="small" type="warning" effect="plain" class="healed-tag">
+            自愈通过
+          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="触发方式">{{ triggerLabel }}</el-descriptions-item>
         <el-descriptions-item label="耗时">{{ formatDuration(execution?.durationMs) }}</el-descriptions-item>
@@ -120,6 +123,47 @@
         <div class="diagnosis-section-label">修复建议</div>
         <div class="diagnosis-fix-text">{{ execution.aiSuggestedFix }}</div>
       </div>
+    </el-card>
+
+    <!-- M8 Agent 修复轨迹：失败后自动归因 → 修复 → 重跑的尝试记录（仅修改执行副本） -->
+    <el-card v-if="agentAttempts.length > 0" class="agent-card">
+      <template #header>
+        <div class="agent-header">
+          <span>Agent 修复轨迹</span>
+          <span class="agent-hint">失败后由 Agent 自动归因并修复重跑的尝试记录；只修改执行副本，不改动用例本身</span>
+        </div>
+      </template>
+      <el-timeline>
+        <el-timeline-item
+          v-for="a in agentAttempts"
+          :key="a.id"
+          :timestamp="formatDateTime(a.createdAt)"
+          :type="agentAttemptResultTagType(a.result)"
+        >
+          <div class="agent-attempt">
+            <div class="agent-attempt-head">
+              <span class="agent-attempt-title">
+                第 {{ a.attemptNumber }} 次尝试 · {{ FIX_CATEGORY_LABELS[a.fixCategory] ?? '未知' }}
+              </span>
+              <el-tag size="small" :type="agentAttemptResultTagType(a.result)">
+                {{ AGENT_ATTEMPT_RESULT_LABELS[a.result] ?? '未知' }}
+              </el-tag>
+              <el-tag v-if="a.needsApproval" size="small" type="warning" effect="plain">需人工审批</el-tag>
+            </div>
+            <div class="agent-attempt-line">
+              目标步骤 {{ a.targetStepOrder }} · 置信度 {{ Math.round((a.confidence ?? 0) * 100) }}%
+              · 已应用修复 {{ a.appliedSuccessfully ? '是' : '否' }}
+              <span v-if="a.llmInputTokens + a.llmOutputTokens > 0">
+                · Tokens {{ a.llmInputTokens }}+{{ a.llmOutputTokens }}
+              </span>
+            </div>
+            <div v-if="a.fixSummary" class="agent-attempt-line">修复建议：{{ a.fixSummary }}</div>
+            <div v-if="a.failureAfterFix" class="agent-attempt-line agent-attempt-fail">
+              修复后仍失败：{{ a.failureAfterFix }}
+            </div>
+          </div>
+        </el-timeline-item>
+      </el-timeline>
     </el-card>
 
     <el-card v-if="visualResults.length > 0" class="visual-card">
@@ -293,7 +337,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { acceptVisualChange } from '@/api/visual'
 import {
   cancelExecution, createExecution, downloadExecutionTrace, downloadExecutionVideo,
-  getExecution, getExecutionDefectLinks,
+  getAgentAttempts, getExecution, getExecutionDefectLinks,
 } from '@/api/execution'
 import { downloadExecutionReport, saveBlobAsFile } from '@/api/report'
 import {
@@ -305,7 +349,10 @@ import { useAuthStore } from '@/stores/auth'
 import { Permission } from '@/constants/permissions'
 import { useSignalR } from '@/composables/useSignalR'
 import { formatDateTime, formatDuration } from '@/utils/formatter'
-import { ExecutionStatus, TriggerType, type ExecutionDetail, type ExecutionResultItem } from '@/types/execution'
+import {
+  AGENT_ATTEMPT_RESULT_LABELS, ExecutionStatus, FIX_CATEGORY_LABELS, TriggerType,
+  agentAttemptResultTagType, type AgentAttempt, type ExecutionDetail, type ExecutionResultItem,
+} from '@/types/execution'
 import { ACTION_TYPE_LABELS, type StepConfig } from '@/types/testcase'
 import { VisualStatus, VISUAL_STATUS_LABELS } from '@/types/visual'
 import { DEFECT_SEVERITY_LABELS, type DefectListItem, type ExecutionDefectLink } from '@/types/defect'
@@ -320,6 +367,8 @@ const executionId = computed(() => route.params.id as string)
 
 const execution = ref<ExecutionDetail | null>(null)
 const results = ref<ExecutionResultItem[]>([])
+/** M8 Agent 修复轨迹（空数组 = 无自愈记录，模板不渲染该区） */
+const agentAttempts = ref<AgentAttempt[]>([])
 const loading = ref(false)
 const rerunning = ref(false)
 let timer: number | undefined
@@ -609,6 +658,15 @@ const liveText = computed(() => {
   return parts.join('，') || '执行中'
 })
 
+/** 拉取本次执行的 Agent 修复轨迹（失败静默为空，不影响详情页其余内容） */
+const loadAgentAttempts = async () => {
+  try {
+    agentAttempts.value = await getAgentAttempts(executionId.value)
+  } catch {
+    agentAttempts.value = []
+  }
+}
+
 const load = async () => {
   if (loading.value) return
   loading.value = true
@@ -636,6 +694,7 @@ const load = async () => {
     loading.value = false
   }
   void loadDefectState()
+  void loadAgentAttempts()
   scheduleDiagnosisReload()
 }
 
@@ -835,6 +894,47 @@ onUnmounted(() => {
 .diagnosis-card {
   margin-bottom: 16px;
   margin-top:15px;
+}
+
+.agent-card {
+  margin-bottom: 16px;
+  margin-top: 15px;
+}
+
+.agent-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.agent-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.agent-attempt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-attempt-title {
+  font-weight: 500;
+}
+
+.agent-attempt-line {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
+.agent-attempt-fail {
+  color: var(--el-color-danger);
+}
+
+.healed-tag {
+  margin-left: 8px;
 }
 
 .diagnosis-header {

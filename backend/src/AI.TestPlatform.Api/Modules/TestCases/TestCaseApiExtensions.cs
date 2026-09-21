@@ -70,6 +70,8 @@ public static class TestCaseApiExtensions
                 .ToListAsync(ct);
 
             var latestExec = await LoadLatestExecutionAsync(db, entities.Select(t => t.Id).ToList(), ct);
+            // 创建人显示名（M8 审计字段）：本页一次批量解析
+            var creatorNames = await UserNameResolver.ResolveAsync(db, entities.Select(t => t.CreatedById), ct);
 
             var items = entities.Select(t =>
             {
@@ -84,7 +86,8 @@ public static class TestCaseApiExtensions
                     t.ReviewedBy != null ? t.ReviewedBy.DisplayName : null,
                     t.RequirementId, t.Requirement?.Title, t.Project.Name,
                     hasExec ? exec.Status : null,
-                    hasExec ? exec.At : null);
+                    hasExec ? exec.At : null,
+                    creatorNames.GetName(t.CreatedById));
             }).ToList();
 
             return Results.Ok(new PagedResult<TestCaseSummaryDto>(items, total, page, pageSize));
@@ -177,7 +180,8 @@ public static class TestCaseApiExtensions
                     LinkUrl: "/testcases",
                     LinkLabel: "查看用例",
                     SourceType: "Project",
-                    SourceId: projectId), ct);
+                    SourceId: projectId,
+                    ProjectId: projectId), ct);
 
                 return Results.Ok(result);
             }
@@ -587,7 +591,8 @@ public static class TestCaseApiExtensions
                 LinkUrl: $"/testcases/{testCase.Id}",
                 LinkLabel: "查看用例",
                 SourceType: "TestCase",
-                SourceId: testCase.Id);
+                SourceId: testCase.Id,
+                ProjectId: testCase.ProjectId);
 
             if (reviewer is not null && reviewer.Id != userId)
                 await inApp.PushAsync(reviewer.Id, reviewDraft, ct);
@@ -649,7 +654,8 @@ public static class TestCaseApiExtensions
                     LinkUrl: $"/testcases/{testCase.Id}",
                     LinkLabel: "查看用例",
                     SourceType: "TestCase",
-                    SourceId: testCase.Id), ct);
+                    SourceId: testCase.Id,
+                    ProjectId: testCase.ProjectId), ct);
             }
             return Results.Ok(new { message = request.Action == "approve" ? "已批准" : "已驳回" });
         }).WithPermission(Permission.ManageTestCases).WithAudit("Review", "TestCase");

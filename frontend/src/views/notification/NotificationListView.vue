@@ -36,6 +36,13 @@
           <el-option v-for="(label, value) in NOTIFICATION_CATEGORY_LABELS" :key="value" :label="label"
             :value="Number(value)" />
         </el-select>
+        <el-select v-model="projectId" placeholder="全部项目" clearable class="w-160" @change="reload">
+          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+        </el-select>
+        <el-input v-model="title" placeholder="标题 / 内容搜索" clearable class="w-220" @keyup.enter="reload"
+          @clear="reload" />
+        <el-date-picker v-model="dateRange" type="daterange" start-placeholder="开始日期" end-placeholder="结束日期"
+          value-format="YYYY-MM-DD" class="w-260" @change="reload" />
         <el-checkbox v-model="unreadOnly" @change="reload">仅看未读</el-checkbox>
         <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
         <div class="toolbar-spacer" />
@@ -61,11 +68,15 @@
             </div>
             <div v-if="item.body" class="msg-text">{{ item.body }}</div>
             <div class="msg-meta">
+              <span v-if="item.projectName" class="msg-project">{{ item.projectName }}</span>
               <span class="msg-cat">{{ categoryLabel(item.category) }}</span>
               <span class="msg-sep">·</span>
-              <el-tooltip :content="formatFullDateTime(item.createdAt)" placement="top">
-                <span>{{ formatRelativeTime(item.createdAt) }}</span>
-              </el-tooltip>
+              <!-- 发送时间用绝对时间展示（原来只有相对时间，翻历史消息时看不出具体时刻） -->
+              <span>发送时间: {{ formatFullDateTime(item.createdAt) }}</span>
+              <template v-if="item.userName">
+                <span class="msg-sep">·</span>
+                <span>接收人: {{ item.userName }}</span>
+              </template>
             </div>
           </div>
 
@@ -74,8 +85,7 @@
               {{ item.linkLabel || '查看详情' }}
             </el-button>
             <el-button v-if="!item.isRead" link type="info" @click="markRead(item)">标记已读</el-button>
-            <el-popconfirm title="删除这条消息？" confirm-button-text="删除" width="220"
-              @confirm="handleDelete(item.id)">
+            <el-popconfirm title="删除这条消息？" confirm-button-text="删除" width="220" @confirm="handleDelete(item.id)">
               <template #reference>
                 <el-button link type="danger">删除</el-button>
               </template>
@@ -87,8 +97,8 @@
       </div>
 
       <!-- 窄屏：三列布局（色条 / 图标 / 正文）在 375px 上会把正文挤成窄条，换成卡片 -->
-      <MobileCardList v-else v-loading="loading" :items="items" :row-key="(row) => row.id"
-        :empty-text="emptyText" class="msg-list-mobile">
+      <MobileCardList v-else v-loading="loading" :items="items" :row-key="(row) => row.id" :empty-text="emptyText"
+        class="msg-list-mobile">
         <template #title="{ item }">
           <span class="msg-title">{{ item.title }}</span>
         </template>
@@ -99,15 +109,15 @@
         <template #meta="{ item }">
           <!-- 卡片里正文交给 meta 自己的排版（12px 换行），不套列表那套两行截断 -->
           <span v-if="item.body">{{ item.body }}</span>
-          <span><span class="mcl-label">时间</span>{{ formatRelativeTime(item.createdAt) }}</span>
+          <span><span class="mcl-label">发送时间</span>{{ formatFullDateTime(item.createdAt) }}</span>
+          <span v-if="item.userName"><span class="mcl-label">接收人</span>{{ item.userName }}</span>
         </template>
         <template #actions="{ item }">
           <el-button v-if="item.linkUrl" link type="primary" @click="open(item)">
             {{ item.linkLabel || '查看详情' }}
           </el-button>
           <el-button v-if="!item.isRead" link type="info" @click="markRead(item)">标记已读</el-button>
-          <el-popconfirm title="删除这条消息？" confirm-button-text="删除" width="220"
-            @confirm="handleDelete(item.id)">
+          <el-popconfirm title="删除这条消息？" confirm-button-text="删除" width="220" @confirm="handleDelete(item.id)">
             <template #reference>
               <el-button link type="danger">删除</el-button>
             </template>
@@ -115,8 +125,8 @@
         </template>
       </MobileCardList>
 
-      <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total"
-        layout="total, prev, pager, next" class="pager" @current-change="load" />
+      <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next"
+        class="pager" @current-change="load" />
     </el-card>
   </div>
 </template>
@@ -127,11 +137,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Select } from '@element-plus/icons-vue'
 import { deleteNotification, getNotifications } from '@/api/notification'
+import { getProjects } from '@/api/project'
 import { useNotificationStore } from '@/stores/notification'
 import { usePagedList } from '@/composables/usePagedList'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import MobileCardList from '@/components/common/MobileCardList.vue'
-import { formatFullDateTime, formatRelativeTime } from '@/utils/formatter'
+import { formatFullDateTime } from '@/utils/formatter'
 import {
   NOTIFICATION_CATEGORY_LABELS, categoryIcon, categoryLabel, type NotificationItem,
 } from '@/types/notification'
@@ -141,10 +152,20 @@ const store = useNotificationStore()
 const { isMobile } = useBreakpoint()
 
 const category = ref<number | undefined>(undefined)
+const projectId = ref<string | undefined>(undefined)
+const title = ref<string | undefined>(undefined)
+const dateRange = ref<string[] | null>(null)
 const unreadOnly = ref(false)
+
+/** 缓存的项目列表 — 筛选下拉 & 消息 meta 展示都用它 */
+const projects = ref<{ id: string; name: string }[]>([])
 
 const list = usePagedList<NotificationItem>((p, ps) => getNotifications({
   category: category.value,
+  projectId: projectId.value,
+  title: title.value?.trim() || undefined,
+  dateFrom: dateRange.value?.[0],
+  dateTo: dateRange.value?.[1],
   unreadOnly: unreadOnly.value || undefined,
   page: p,
   pageSize: ps,
@@ -184,6 +205,8 @@ const markRead = async (item: NotificationItem, notify = true) => {
   await store.markRead(item.id)
   item.isRead = true
   if (notify) ElMessage.success('已标记为已读')
+  // 「仅看未读」模式下，这条已不再是未读，重载一次才与筛选语义一致
+  if (unreadOnly.value) await reload()
 }
 
 const handleReadAll = async () => {
@@ -199,7 +222,13 @@ const handleDelete = async (id: string) => {
   void store.refreshUnread()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 先拉项目列表（后续筛选和 meta 展示都依赖），再拉消息
+  try {
+    const res = await getProjects({ page: 1, pageSize: 100 })
+    projects.value = (res.items ?? []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name }))
+  }
+  catch { /* 拉不到就空着，不阻塞消息列表 */ }
   load()
   void store.refreshUnread()
 })
@@ -329,6 +358,24 @@ onMounted(() => {
   width: 160px;
 }
 
+.w-220 {
+  width: 220px;
+}
+
+.w-260 {
+  width: 260px;
+}
+
+/* 消息 meta 里的项目名 — 用 tag 风格高亮一下，让"这条消息属于哪个项目"一眼能扫到 */
+.msg-project {
+  padding: 1px 8px;
+  border-radius: 4px;
+  background-color: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 /* 刷新按钮推到工具栏最右 */
 .toolbar-spacer {
   flex: 1;
@@ -393,10 +440,24 @@ onMounted(() => {
 }
 
 /* 级别只改图标配色，不改卡片底色 */
-.msg-icon.level-0 { color: var(--el-text-color-secondary); }
-.msg-icon.level-1 { color: var(--el-color-success); background-color: var(--el-color-success-light-9); }
-.msg-icon.level-2 { color: var(--el-color-warning); background-color: var(--el-color-warning-light-9); }
-.msg-icon.level-3 { color: var(--el-color-danger); background-color: var(--el-color-danger-light-9); }
+.msg-icon.level-0 {
+  color: var(--el-text-color-secondary);
+}
+
+.msg-icon.level-1 {
+  color: var(--el-color-success);
+  background-color: var(--el-color-success-light-9);
+}
+
+.msg-icon.level-2 {
+  color: var(--el-color-warning);
+  background-color: var(--el-color-warning-light-9);
+}
+
+.msg-icon.level-3 {
+  color: var(--el-color-danger);
+  background-color: var(--el-color-danger-light-9);
+}
 
 .msg-body {
   flex: 1;

@@ -6,7 +6,9 @@ public record CreateProjectRequest(
 
 public record UpdateProjectRequest(
     string Name, string? Description,
-    Guid? ManagerId = null, Guid? TestOwnerId = null, Guid? DeveloperOwnerId = null);
+    Guid? ManagerId = null, Guid? TestOwnerId = null, Guid? DeveloperOwnerId = null,
+    // M8 Agent 自愈（项目级开关；系统级总开关在系统配置）
+    bool? AgentLoopEnabled = null, bool? TreatAgentHealedAsPass = null);
 
 /// <summary>
 /// 项目视图。
@@ -23,4 +25,10 @@ public record ProjectDto(
     Guid? TestOwnerId = null, string? TestOwnerName = null,
     string? TestOwnerEmail = null,
     /// <summary>开发负责人：对缺陷修复负责（测试负责人对用例质量负责）</summary>
-    Guid? DeveloperOwnerId = null, string? DeveloperOwnerName = null);
+    Guid? DeveloperOwnerId = null, string? DeveloperOwnerName = null,
+    /// <summary>M8 Agent 自愈：项目级开关（须与系统级总开关同时开启才生效）</summary>
+    bool AgentLoopEnabled = false,
+    /// <summary>M8 Agent 自愈：自愈"通过"是否计入达标判定（默认否）</summary>
+    bool TreatAgentHealedAsPass = false,
+    /// <summary>创建人显示名（M8 审计字段）</summary>
+    string? CreatedByName = null);

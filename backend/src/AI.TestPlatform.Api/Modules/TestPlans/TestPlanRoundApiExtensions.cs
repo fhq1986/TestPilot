@@ -53,12 +53,15 @@ public static class TestPlanRoundApiExtensions
             var counts = await plans.LoadRoundCountsAsync(rounds.Select(r => r.Id).ToList(), ct);
             var plan = await db.TestPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
             var excludeFlaky = plan?.ExcludeFlakyFromFailure ?? true;
+            // Agent 自愈通过是否计入达标（项目级，默认不计入）
+            var treatAgentHealed = plan is not null
+                && await plans.GetTreatAgentHealedAsPassAsync(plan.ProjectId, ct);
 
             return Results.Ok(rounds.Select(r =>
             {
                 if (!counts.TryGetValue(r.Id, out var c)) c = RoundCounts.Empty;
-                // 与达标判定同一口径（含 flaky 排除），否则会出现两个不一致的通过率
-                var stats = TestPlanService.ToStats(c, excludeFlaky);
+                // 与达标判定同一口径（含 flaky 排除与自愈口径），否则会出现两个不一致的通过率
+                var stats = TestPlanService.ToStats(c, excludeFlaky, treatAgentHealed);
                 return new PlanRoundSummaryDto(r.Id, r.RoundNo, r.Status, r.TriggerType,
                     r.TriggerSource, r.StartedAt, r.CompletedAt, r.CreatedCount, r.Error,
                     stats,
@@ -79,10 +82,12 @@ public static class TestPlanRoundApiExtensions
             if (!counts.TryGetValue(roundId, out var c)) c = RoundCounts.Empty;
             var plan = await db.TestPlans.AsNoTracking()
                 .Where(p => p.Id == round.PlanId)
-                .Select(p => new { p.ExcludeFlakyFromFailure, p.TargetPassRate })
+                .Select(p => new { p.ProjectId, p.ExcludeFlakyFromFailure, p.TargetPassRate })
                 .FirstOrDefaultAsync(ct);
             var excludeFlaky = plan?.ExcludeFlakyFromFailure ?? true;
-            var stats = TestPlanService.ToStats(c, excludeFlaky);
+            var treatAgentHealed = plan is not null
+                && await plans.GetTreatAgentHealedAsPassAsync(plan.ProjectId, ct);
+            var stats = TestPlanService.ToStats(c, excludeFlaky, treatAgentHealed);
 
             return Results.Ok(new
             {
@@ -122,15 +127,16 @@ public static class TestPlanRoundApiExtensions
             if (plan is null) return Results.NotFound();
 
             var rounds = await plans.LoadRoundsRawAsync(id, ct);
+            var treatAgentHealed = plan.Project?.TreatAgentHealedAsPass ?? false;
             var gate = PlanGateEvaluator.Evaluate(plan.Name, plan.ReleaseName,
                 plan.TargetPassRate, plan.AllowErrors, plan.ExcludeFlakyFromFailure,
-                plan.GateMode, rounds);
+                plan.GateMode, rounds, treatAgentHealedAsPass: treatAgentHealed);
 
             var trends = rounds.Select(r =>
             {
                 var (passed, passRate, _, _, denom, _, _) =
                     PlanGateEvaluator.Judge(r, plan.TargetPassRate, plan.AllowErrors,
-                        plan.ExcludeFlakyFromFailure);
+                        plan.ExcludeFlakyFromFailure, treatAgentHealed);
                 return new PlanRoundTrendDto(r.RoundNo, r.StartedAt, r.CompletedAt,
                     denom, r.Passed, r.Failed, r.Error, r.Skipped, passRate, passed);
             }).ToList();

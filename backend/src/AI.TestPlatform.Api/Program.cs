@@ -104,8 +104,11 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-builder.Services.AddDbContext<TestDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"), npgsql => npgsql.UseVector()));
+// M8/审计：SaveChanges 拦截器统一给带审计字段的实体盖「创建人/创建时间/修改人/修改时间」
+builder.Services.AddSingleton<AuditStampInterceptor>();
+builder.Services.AddDbContext<TestDbContext>((sp, options) =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"), npgsql => npgsql.UseVector())
+           .AddInterceptors(sp.GetRequiredService<AuditStampInterceptor>()));
 
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 builder.Services.AddSingleton(jwtOptions);
@@ -330,6 +333,14 @@ builder.Services.AddSingleton<MockService>();
 builder.Services.AddScoped<ElementCacheService>();
 builder.Services.AddScoped<DiagnosisService>();
 builder.Services.AddScoped<SettingsService>();
+
+// M8 Agent 失败自愈闭环。熔断器为**进程内单例**（AILivenessBreaker 自带状态机，勿注册为 Scoped）；
+// 编排服务按作用域（依赖 TestRunner/DbContext）。总开关在 SystemConfig，参数走 AgentLoop 配置节。
+builder.Services.Configure<AgentLoopOptions>(builder.Configuration.GetSection("AgentLoop"));
+builder.Services.AddSingleton<AILivenessBreaker>();
+builder.Services.AddScoped<AgentLoopService>();
+// M8 Phase 3：Planner（按目标 + 失败历史重构步骤序列）
+builder.Services.AddScoped<IPlannerService, AgentPlannerService>();
 // 缺陷管理（内建轻量模块，ExternalRef 预留外部对接）
 builder.Services.AddScoped<DefectService>();
 // 需求覆盖（精简版：覆盖统计锚点，ExternalKey 预留外部需求系统）

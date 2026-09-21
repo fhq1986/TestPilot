@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using AI.TestPlatform.Api.AI;
 using AI.TestPlatform.Api.Execution;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
@@ -51,7 +52,9 @@ public static class MetricsEndpoint
             if (!TokenEquals(provided, expectedToken))
                 return Results.Unauthorized();
 
-            var text = await RenderAsync(db, options.Value, ct);
+            // M8：AI 可用性熔断状态（0=Closed 1=HalfOpen 2=Open）——"AI 有没有在降级"一眼可见
+            var breakerState = http.RequestServices.GetRequiredService<AILivenessBreaker>().StateCode;
+            var text = await RenderAsync(db, options.Value, breakerState, ct);
             // Prometheus 文本格式的 Content-Type 必须带 version，否则抓取端会拒绝
             return Results.Text(text, "text/plain; version=0.0.4; charset=utf-8");
         })
@@ -60,7 +63,8 @@ public static class MetricsEndpoint
         .DisableRateLimiting();
     }
 
-    private static async Task<string> RenderAsync(TestDbContext db, ExecutionOptions options, CancellationToken ct)
+    private static async Task<string> RenderAsync(TestDbContext db, ExecutionOptions options,
+        int aiCircuitState, CancellationToken ct)
     {
         var sb = new StringBuilder(2048);
 
@@ -81,6 +85,9 @@ public static class MetricsEndpoint
             aliveNodes.Count);
         Gauge(sb, "aitest_node_capacity", "在线节点声明的并发上限之和", aliveNodes.Sum(n => n.MaxConcurrency));
         Gauge(sb, "aitest_node_running", "在线节点上报的运行中执行数之和", aliveNodes.Sum(n => n.RunningCount));
+
+        // AI 可用性熔断状态：AI 挂掉时全局短路，运维需要能一眼看到"当前是否在降级"
+        Gauge(sb, "aitest_ai_circuit_state", "AI 可用性熔断状态（0=Closed 1=HalfOpen 2=Open）", aiCircuitState);
 
         // ------------------------------ 累计执行数（真正的计数型：只增不减）
         var byStatus = await db.Executions
