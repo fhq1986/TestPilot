@@ -32,17 +32,17 @@
 
     <el-card shadow="never" class="list-card">
       <div class="filter-bar">
-        <el-select v-model="category" placeholder="全部类型" clearable class="w-160" @change="reload">
+        <el-select v-model="category" placeholder="全部类型" clearable class="w-120" @change="reload">
           <el-option v-for="(label, value) in NOTIFICATION_CATEGORY_LABELS" :key="value" :label="label"
             :value="Number(value)" />
         </el-select>
         <el-select v-model="projectId" placeholder="全部项目" clearable class="w-160" @change="reload">
           <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
-        <el-input v-model="title" placeholder="标题 / 内容搜索" clearable class="w-220" @keyup.enter="reload"
+        <el-input v-model="title" placeholder="标题 / 内容搜索" clearable class="w-160" @keyup.enter="reload"
           @clear="reload" />
         <el-date-picker v-model="dateRange" type="daterange" start-placeholder="开始日期" end-placeholder="结束日期"
-          value-format="YYYY-MM-DD" class="w-260" @change="reload" />
+          value-format="YYYY-MM-DD"  @change="reload" />
         <el-checkbox v-model="unreadOnly" @change="reload">仅看未读</el-checkbox>
         <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
         <div class="toolbar-spacer" />
@@ -353,7 +353,9 @@ onMounted(async () => {
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-
+.w-120 {
+  width: 120px;
+}
 .w-160 {
   width: 160px;
 }
@@ -362,9 +364,20 @@ onMounted(async () => {
   width: 220px;
 }
 
+/* el-date-picker 内部套了一层 el-input，
+   在 flex 工具栏里只写 width 会被内部的 width:100% 撑开 → 三重锁死 */
 .w-260 {
   width: 260px;
+  max-width: 260px;
+  flex: 0 0 260px;
 }
+
+.w-180 {
+  width: 180px;
+  max-width: 180px;
+  flex: 0 0 180px;
+}
+
 
 /* 消息 meta 里的项目名 — 用 tag 风格高亮一下，让"这条消息属于哪个项目"一眼能扫到 */
 .msg-project {

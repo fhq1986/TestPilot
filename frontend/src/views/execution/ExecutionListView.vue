@@ -5,12 +5,13 @@
         <el-select v-model="projectId" placeholder="选择项目" clearable filterable class="project-select" @change="load(1)">
           <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
-        <el-input v-model="testCaseName" placeholder="用例名称搜索" clearable class="w-180" @keyup.enter="load(1)"
-          @clear="load(1)" />
+       
         <el-select v-model="status" placeholder="选择状态" clearable class="status-select" @change="onStatusChange">
           <el-option v-for="(label, value) in EXECUTION_STATUS_LABELS" :key="value" :label="label"
             :value="Number(value)" />
         </el-select>
+         <el-input v-model="testCaseName" placeholder="用例名称搜索" clearable class="w-180" @keyup.enter="load(1)"
+          @clear="load(1)" />
         <el-date-picker v-model="dateRange" type="daterange" start-placeholder="开始日期" end-placeholder="结束日期"
           value-format="YYYY-MM-DD" class="w-260" @change="load(1)" />
         <el-button type="primary" :icon="Download" :disabled="selectedRows.length === 0" :loading="reporting"
@@ -387,13 +388,18 @@ onMounted(async () => {
   width: 200px;
 }
 
-/* 工具栏筛选控件固定宽度（el-input 不写 width 会被 flex 撑满） */
+/* 工具栏筛选控件固定宽度（el-input 不写 width 会被 flex 撑满；
+   el-date-picker 内部还套了一层 el-input，用 flex:0 0 锁死最稳） */
 .w-180 {
   width: 180px;
+  max-width: 180px;
+  flex: 0 0 180px;
 }
 
 .w-260 {
   width: 260px;
+  max-width: 260px;
+  flex: 0 0 260px;
 }
 
 .filter-tag {

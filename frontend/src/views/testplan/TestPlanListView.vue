@@ -9,7 +9,7 @@
           <el-select v-model="statusFilter" placeholder="全部状态" clearable class="w-140" @change="load(1)">
             <el-option v-for="(label, value) in STATUS_LABELS" :key="value" :label="label" :value="Number(value)" />
           </el-select>
-          <el-select v-model="ownerFilter" placeholder="全部负责人" clearable filterable class="w-180" @change="load(1)">
+          <el-select v-model="ownerFilter" placeholder="全部负责人" clearable filterable class="w-140" @change="load(1)">
             <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
           </el-select>
           <el-select v-model="releaseFilter" placeholder="全部版本" clearable class="w-160" @change="load(1)">
@@ -821,7 +821,9 @@ onMounted(async () => {
 .w-200 {
   width: 200px;
 }
-
+.w-180 {
+  width: 180px;
+}
 .w-full {
   width: 100%;
 }
