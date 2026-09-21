@@ -387,6 +387,15 @@ onMounted(async () => {
   width: 200px;
 }
 
+/* 工具栏筛选控件固定宽度（el-input 不写 width 会被 flex 撑满） */
+.w-180 {
+  width: 180px;
+}
+
+.w-260 {
+  width: 260px;
+}
+
 .filter-tag {
   margin-left: 4px;
 }
