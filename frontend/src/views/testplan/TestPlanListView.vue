@@ -9,6 +9,9 @@
           <el-select v-model="statusFilter" placeholder="全部状态" clearable class="w-140" @change="load(1)">
             <el-option v-for="(label, value) in STATUS_LABELS" :key="value" :label="label" :value="Number(value)" />
           </el-select>
+          <el-select v-model="ownerFilter" placeholder="全部负责人" clearable filterable class="w-180" @change="load(1)">
+            <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
+          </el-select>
           <el-select v-model="releaseFilter" placeholder="全部版本" clearable class="w-160" @change="load(1)">
             <el-option v-for="r in releases" :key="r" :label="r" :value="r" />
           </el-select>
@@ -402,6 +405,7 @@ const envRow = ref<TestPlanSummary | null>(null)
 const projectId = ref('')
 // 默认显示全部状态：新建的计划是草稿（Draft），默认筛「进行中」会让它凭空消失
 const statusFilter = ref<number | ''>('')
+const ownerFilter = ref<string | ''>('')
 const releaseFilter = ref('')
 const search = ref('')
 const requirementId = ref('')
@@ -409,6 +413,7 @@ const requirementId = ref('')
 const list = usePagedList<TestPlanSummary>((p, ps) => listTestPlansApi({
   projectId: projectId.value || undefined,
   status: statusFilter.value === '' ? undefined : (statusFilter.value as 0),
+  ownerId: ownerFilter.value || undefined,
   releaseName: releaseFilter.value || undefined,
   search: search.value.trim() || undefined,
   requirementId: requirementId.value || undefined,

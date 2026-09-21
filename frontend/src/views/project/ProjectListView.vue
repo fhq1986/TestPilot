@@ -49,6 +49,9 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
+          <el-table-column label="创建时间" width="170">
+            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+          </el-table-column>
           <el-table-column label="更新时间" width="180">
             <template #default="{ row }">
               {{ formatDateTime(row.updatedAt) }}

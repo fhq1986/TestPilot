@@ -21,6 +21,11 @@ export const getExecutions = (params: {
   suiteId?: string
   /** 浏览器筛选（chromium / firefox / webkit） */
   browser?: string
+  /** 用例名称模糊搜索 */
+  testCaseName?: string
+  /** 开始时间范围 */
+  dateFrom?: string
+  dateTo?: string
 }) => request.get<unknown, PagedResult<ExecutionSummary>>('/executions', { params })
 
 export const getExecution = (id: string) => request.get<unknown, ExecutionDetail>(`/executions/${id}`)

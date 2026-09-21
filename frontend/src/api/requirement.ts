@@ -9,6 +9,8 @@ import type {
 export const getRequirements = (params: {
   projectId?: string
   search?: string
+  /** 需求状态枚举值（0=未开始 / 1=进行中 / 2=已完成） */
+  status?: number
   page?: number
   pageSize?: number
 }) => request.get<unknown, PagedResult<RequirementListItem>>('/requirements', { params })

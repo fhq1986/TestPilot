@@ -25,9 +25,10 @@ public static class RequirementApiExtensions
             CancellationToken ct,
             [FromQuery] Guid? projectId = null,
             [FromQuery] string? search = null,
+            [FromQuery] RequirementStatus? status = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
-            Results.Ok(await requirements.ListAsync(projectId, search, page, pageSize, ct)))
+            Results.Ok(await requirements.ListAsync(projectId, search, status, page, pageSize, ct)))
             .WithPermission(Permission.ViewTestCases);
 
         // 项目覆盖统计卡：覆盖率 + 未覆盖缺口清单

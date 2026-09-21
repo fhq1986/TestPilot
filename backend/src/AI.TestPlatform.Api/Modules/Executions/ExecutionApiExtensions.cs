@@ -128,6 +128,11 @@ public static class ExecutionApiExtensions
             [FromQuery] Guid? suiteId = null,
             // 浏览器筛选（多浏览器矩阵结果对照用）
             [FromQuery] string? browser = null,
+            // 用例名称模糊搜索（执行记录列表页用）
+            [FromQuery] string? testCaseName = null,
+            // 开始时间范围（执行记录列表页用）
+            [FromQuery] DateTime? dateFrom = null,
+            [FromQuery] DateTime? dateTo = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
         {
@@ -158,6 +163,19 @@ public static class ExecutionApiExtensions
             {
                 var normalized = BrowserCatalog.Normalize(browser);
                 query = query.Where(e => e.BrowserName == normalized);
+            }
+            if (!string.IsNullOrWhiteSpace(testCaseName))
+            {
+                var kw = testCaseName.Trim();
+                query = query.Where(e => e.TestCase != null && EF.Functions.Like(e.TestCase.Name, $"%{kw}%"));
+            }
+            if (dateFrom.HasValue)
+                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) >= dateFrom.Value);
+            if (dateTo.HasValue)
+            {
+                // 用户选 9/21 想包含当天所有执行 → exclusive 下一天零点
+                var toExclusive = dateTo.Value.Date.AddDays(1);
+                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) < toExclusive);
             }
 
             var total = await query.CountAsync(ct);

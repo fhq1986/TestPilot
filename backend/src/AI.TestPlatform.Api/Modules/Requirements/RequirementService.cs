@@ -23,10 +23,11 @@ namespace AI.TestPlatform.Api.Modules.Requirements;
 public class RequirementService(TestDbContext db)
 {
     public async Task<PagedResult<RequirementListItemDto>> ListAsync(
-        Guid? projectId, string? search, int page, int pageSize, CancellationToken ct)
+        Guid? projectId, string? search, RequirementStatus? status, int page, int pageSize, CancellationToken ct)
     {
         var query = db.Requirements.AsNoTracking()
             .Where(r => projectId == null || r.ProjectId == projectId)
+            .Where(r => status == null || r.Status == status.Value)
             .Where(r => search == null ||
                         EF.Functions.ILike(r.Title, $"%{search}%") ||
                         (r.ExternalKey != null && EF.Functions.ILike(r.ExternalKey, $"%{search}%")));

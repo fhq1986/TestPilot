@@ -47,6 +47,10 @@
           @change="reload">
           <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
+        <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 160px" @change="reload">
+          <el-option v-for="(label, val) in REQUIREMENT_STATUS_LABELS" :key="val" :label="label"
+            :value="Number(val)" />
+        </el-select>
         <el-input v-model="filters.search" placeholder="搜索标题 / 外部编号" clearable style="width: 220px"
           @keyup.enter="reload" @clear="reload" />
         <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
@@ -305,7 +309,7 @@ const openPlansForRequirement = (row: RequirementListItem) => {
   })
 }
 
-const filters = ref<{ projectId?: string; search?: string }>({})
+const filters = ref<{ projectId?: string; search?: string; status?: number }>({})
 
 const projectName = (projectId: string) => projects.value.find((p) => p.id === projectId)?.name ?? '—'
 
@@ -318,6 +322,7 @@ const goRequirementCases = (row: RequirementListItem) => {
 const list = usePagedList<RequirementListItem>((p, ps) => getRequirements({
   projectId: filters.value.projectId,
   search: filters.value.search,
+  status: filters.value.status,
   page: p,
   pageSize: ps,
 }), { pageSize: 20 })

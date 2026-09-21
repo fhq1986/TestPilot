@@ -5,10 +5,14 @@
         <el-select v-model="projectId" placeholder="选择项目" clearable filterable class="project-select" @change="load(1)">
           <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
+        <el-input v-model="testCaseName" placeholder="用例名称搜索" clearable class="w-180" @keyup.enter="load(1)"
+          @clear="load(1)" />
         <el-select v-model="status" placeholder="选择状态" clearable class="status-select" @change="onStatusChange">
           <el-option v-for="(label, value) in EXECUTION_STATUS_LABELS" :key="value" :label="label"
             :value="Number(value)" />
         </el-select>
+        <el-date-picker v-model="dateRange" type="daterange" start-placeholder="开始日期" end-placeholder="结束日期"
+          value-format="YYYY-MM-DD" class="w-260" @change="load(1)" />
         <el-button type="primary" :icon="Download" :disabled="selectedRows.length === 0" :loading="reporting"
           @click="handleBatchReport">生成报告（{{ selectedRows.length }}）</el-button>
         <el-button type="danger" :icon="Delete" :disabled="selectedRows.length === 0" :loading="deleting"
@@ -217,6 +221,10 @@ const clearQuickFilters = () => {
 
 const projectOptions = ref<Project[]>([])
 const projectId = ref('')
+/** 用例名称模糊搜索（执行列表新增筛选） */
+const testCaseName = ref<string | undefined>(undefined)
+/** 开始时间范围 */
+const dateRange = ref<string[] | null>(null)
 // 支持从仪表盘等入口带预设状态（如「进行中执行」→ 状态=执行中）
 const status = ref<number | undefined>(
   route.query.status !== undefined && route.query.status !== ''
@@ -230,6 +238,9 @@ const list = usePagedList<ExecutionSummary>((p, ps) => getExecutions({
   days: days.value,
   runningOnly: runningOnly.value || undefined,
   suiteRunId: suiteRunId.value,
+  testCaseName: testCaseName.value?.trim() || undefined,
+  dateFrom: dateRange.value?.[0],
+  dateTo: dateRange.value?.[1],
   page: p,
   pageSize: ps,
 }))

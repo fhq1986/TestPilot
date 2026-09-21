@@ -87,6 +87,9 @@
               <span v-else class="muted">-</span>
             </template>
           </el-table-column>
+          <el-table-column label="创建时间" width="170">
+            <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+          </el-table-column>
           <el-table-column label="编号" width="130" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.caseCode" class="mono">{{ row.caseCode }}</span>
