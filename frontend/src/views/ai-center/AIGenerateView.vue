@@ -13,10 +13,10 @@
                 <el-upload ref="docUploadRef" :auto-upload="false" :limit="1"
                   accept=".txt,.md,.markdown,.docx"
                   :on-change="onDocChange" :on-remove="() => (docFile = null)">
-                  <el-button :icon="Upload">选择文档</el-button>
+                  <el-button type="primary" :icon="Upload">选择文档</el-button>
                 </el-upload>
                 <el-button :icon="Document" :loading="extracting" :disabled="!docFile"
-                  @click="handleExtractDoc">重新解析</el-button>
+                  @click="handleExtractDoc" type="warning" plain>重新解析</el-button>
                 <span v-if="docInfo" class="doc-info">{{ docInfo }}</span>
               </div>
               <div class="doc-hint">
@@ -412,8 +412,9 @@ onMounted(async () => {
 }
 
 .doc-hint {
-  margin-top: 6px;
-  font-size: 12px;
+  padding-left:10px;
+  margin-top: 3px;
+  font-size: 14px;
   color: var(--el-text-color-secondary);
 }
 
