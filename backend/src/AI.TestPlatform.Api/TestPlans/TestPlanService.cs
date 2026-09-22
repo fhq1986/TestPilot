@@ -390,8 +390,9 @@ public class TestPlanService
             _db.Executions.AddRange(plan1.Executions);
             round.CreatedCount = plan1.Executions.Count;
 
-            // 计划从 Draft 自动进入 Active：开跑即视为已开始
-            if (plan.Status == TestPlanStatus.Draft) plan.Status = TestPlanStatus.Active;
+            // 推进计划状态：开跑即视为进行中（覆盖 Draft / Completed → Active）
+            // Archived 在入口 L313 已拦截；Active 说明本来就在跑（但 StartRound 入口也已拦）
+            if (plan.Status != TestPlanStatus.Active) plan.Status = TestPlanStatus.Active;
             plan.LastRoundAt = round.StartedAt;
             plan.LastCreatedCount = round.CreatedCount;
             plan.LastError = null;
