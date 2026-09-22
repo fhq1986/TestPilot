@@ -73,7 +73,12 @@ public sealed class AuditStampInterceptor : SaveChangesInterceptor
             if (entry.State == EntityState.Added)
             {
                 props.CreatedById?.SetValue(entry.Entity, userId);
-                props.CreatedAt?.SetValue(entry.Entity, now);
+                // 只补"没写过的"：实体若已显式 stamp 了 CreatedAt，就不能覆盖成 SaveChanges 这一刻。
+                // 否则业务上更早设置的字段会晚于它——AgentAttempt 在自愈循环里记 CreatedAt（尝试开始），
+                // 循环结束才 SaveChanges，被覆盖后 CreatedAt 反而晚于 CompletedAt，耗时算出来是负数
+                // （自愈度量 avgFixMinutes 因此恒为负）。
+                if (IsUnset(props.CreatedAt?.GetValue(entry.Entity)))
+                    props.CreatedAt?.SetValue(entry.Entity, now);
             }
             // 修改时间/人：新增的也一并写（创建即视为最后修改），修改的只写修改
             props.UpdatedById?.SetValue(entry.Entity, userId);
@@ -86,4 +91,12 @@ public sealed class AuditStampInterceptor : SaveChangesInterceptor
         var raw = _accessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(raw, out var id) ? id : null;
     }
+
+    /// <summary>CreatedAt 是否尚未写入（DateTime 看 default，DateTime? 看 null）</summary>
+    private static bool IsUnset(object? value) => value switch
+    {
+        null => true,
+        DateTime dt => dt == default,
+        _ => false,
+    };
 }
