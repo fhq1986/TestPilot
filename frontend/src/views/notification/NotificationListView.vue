@@ -199,14 +199,24 @@ const open = async (item: NotificationItem) => {
   if (item.linkUrl) void router.push(item.linkUrl)
 }
 
-/** 标记已读：列表里的对象就地更新，避免整页重拉（重拉会打断滚动位置） */
+/** 标记已读：乐观更新 —— 先本地改 UI，API 失败再回滚
+ *  之前顺序错了：await store.markRead() 抛异常 → item.isRead = true 被跳过 → 用户看到"点了没反应"
+ */
 const markRead = async (item: NotificationItem, notify = true) => {
   if (item.isRead) return
-  await store.markRead(item.id)
-  item.isRead = true
-  if (notify) ElMessage.success('已标记为已读')
-  // 「仅看未读」模式下，这条已不再是未读，重载一次才与筛选语义一致
-  if (unreadOnly.value) await reload()
+  item.isRead = true                               // 🟢 乐观更新先改 UI（按钮立即消失、行立即变已读）
+  const prevUnread = store.unread.total
+  store.unread.total = Math.max(0, store.unread.total - 1)
+  try {
+    await store.markRead(item.id)                  // 🟡 后端落库
+    if (notify) ElMessage.success('已标记为已读')
+    // 「仅看未读」模式下，这条已不再是未读，重载一次才与筛选语义一致
+    if (unreadOnly.value) await reload()
+  } catch (e) {
+    item.isRead = false                             // 🔴 失败回滚
+    store.unread.total = prevUnread
+    ElMessage.error('标记已读失败，请重试')
+  }
 }
 
 const handleReadAll = async () => {
