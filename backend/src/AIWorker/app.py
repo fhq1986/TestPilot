@@ -2,6 +2,7 @@
 import asyncio
 import hmac
 import json
+import logging
 import os
 import re
 import time
@@ -68,6 +69,22 @@ async def require_worker_token(request: Request, call_next):
             return JSONResponse({"detail": "AIWorker 未配置 WORKER_TOKEN，服务间鉴权未启用，拒绝服务"}, status_code=503)
         if not hmac.compare_digest(provided, WORKER_TOKEN):
             return JSONResponse({"detail": "AIWorker 调用未携带有效的 X-Worker-Token"}, status_code=401)
+    return await call_next(request)
+
+
+_logger = logging.getLogger("aiworker")
+
+
+@app.middleware("http")
+async def trace_correlation(request: Request, call_next):
+    """迭代 E·③：记录 .NET 侧注入的 W3C traceparent，使 Worker 日志能关联回同一条 trace。
+
+    Worker 是独立 Python 进程、无 OTel SDK，因此**不导出 span**，只做日志级关联；
+    真正把 traceparent 注入请求的是 C# 侧的 OpenTelemetry HttpClient 埋点。
+    """
+    traceparent = request.headers.get("traceparent")
+    if traceparent and request.url.path.startswith("/api/"):
+        _logger.info("trace=%s %s %s", traceparent, request.method, request.url.path)
     return await call_next(request)
 
 
@@ -889,6 +906,78 @@ async def ping(req: PingRequest):
         raise HTTPException(status_code=502, detail="LLM 响应异常")
     cfg = resolve_llm_config(req.llm_config)
     return {"ok": True, "model": cfg["model"], "latency_ms": elapsed_ms}
+
+
+# ---------------------------------------------------------------- D4：语义向量化（真语义 embedding）
+
+class EmbeddingRequest(BaseModel):
+    """批量文本向量化请求。texts 为待向量化文本；embedding_config 可选，覆盖环境变量级配置。"""
+    texts: list[str] = Field(min_length=1, max_length=64)
+    embedding_config: dict | None = None
+
+
+# 外部 embeddings 端点配置（与 LLM 解耦：语义向量可走独立的向量模型服务）
+EMBEDDING_BASE_URL = os.environ.get("EMBEDDING_BASE_URL", "https://api.openai.com/v1")
+EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY", "")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+
+
+def resolve_embedding_config(extra: dict | None) -> dict:
+    """请求级覆盖，缺失字段回退环境变量（与 resolve_llm_config 同构）。
+
+    base_url 只接受 http(s)，非 http(s) 的覆盖值直接丢弃回退，防止奇怪 scheme 被喂给 httpx。
+    """
+    env = {"base_url": EMBEDDING_BASE_URL, "api_key": EMBEDDING_API_KEY, "model": EMBEDDING_MODEL}
+    if not extra:
+        return env
+    merged = dict(env)
+    for key in ("base_url", "api_key", "model"):
+        if extra.get(key):
+            merged[key] = extra[key]
+    if not str(merged["base_url"]).startswith(("http://", "https://")):
+        merged["base_url"] = EMBEDDING_BASE_URL
+    return merged
+
+
+@app.post("/api/embed")
+async def embed(req: EmbeddingRequest):
+    """调用 OpenAI 兼容 /v1/embeddings 生成真语义向量，替代 C# 侧 ElementEmbedder 的确定性哈希。
+
+    返回 {"embeddings": [[...], ...], "model": str, "dim": int}。空 API Key 时拒绝（fail closed，
+    避免把流量无谓打到外部）；上游错误透传 502。向量结果按请求顺序归位（按 index 排，缺项即报错）。
+    """
+    cfg = resolve_embedding_config(req.embedding_config)
+    if not cfg["api_key"]:
+        raise HTTPException(status_code=503, detail="AIWorker 未配置 EMBEDDING_API_KEY，无法提供语义 embedding")
+
+    shared: httpx.AsyncClient | None = getattr(app.state, "llm_client", None)
+    client = shared or httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS)
+    try:
+        resp = await client.post(
+            f"{cfg['base_url']}/embeddings",
+            headers={"Authorization": f"Bearer {cfg['api_key']}"},
+            json={"model": cfg["model"], "input": req.texts},
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Embedding 调用失败 ({resp.status_code}): {resp.text[:300]}")
+        data = resp.json()
+        items = data.get("data") or []
+        # 按 index 归位，防御上游乱序
+        vectors: list[list[float] | None] = [None] * len(req.texts)
+        for it in items:
+            idx = it.get("index", 0)
+            if 0 <= idx < len(vectors):
+                vectors[idx] = it.get("embedding") or []
+        if any(v is None for v in vectors):
+            raise HTTPException(status_code=502, detail="Embedding 响应缺少部分向量")
+        dim = len(vectors[0]) if vectors else 0
+        return {"embeddings": vectors, "model": cfg["model"], "dim": dim}
+    except httpx.HTTPError as ex:
+        raise HTTPException(status_code=502, detail=f"Embedding 连接失败: {ex}") from ex
+    finally:
+        if shared is None:
+            await client.aclose()
 
 
 # ---------------------------------------------------------------- 视觉回归

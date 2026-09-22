@@ -1,3 +1,4 @@
+using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -55,8 +56,10 @@ public static class TestPlanLinker
             if (linked > 0)
             {
                 await db.SaveChangesAsync(ct);
+                var now = DateTime.UtcNow;
+                var userId = db.ResolveAuditUserId();
                 await db.TestPlans.Where(p => p.Id == planId)
-                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow), ct);
+                    .ExecuteUpdateAsync(s => s.Stamp(userId, now), ct);
             }
 
             warnings?.Add(linked > 0

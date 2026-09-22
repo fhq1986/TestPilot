@@ -32,7 +32,7 @@ public static class AuthApiExtensions
         group.MapGet("/sso/providers", async (SsoLoginService sso, CancellationToken ct) =>
         {
             var options = await sso.GetEffectiveOptionsAsync(ct);
-            var providers = new[] { "wecom", "dingtalk", "mock" }
+            var providers = new[] { "wecom", "dingtalk", "oidc", "mock" }
                 .Select(id => sso.ResolveProvider(id, options))
                 .Where(p => p is not null)
                 .Select(p => new SsoProviderInfo(
@@ -53,12 +53,11 @@ public static class AuthApiExtensions
 
             var m = mode == "bind" ? "bind" : "login";
             var state = sso.NewState(provider, m);
-            var callback = SsoLoginService.FrontendCallbackUrl(options) + (m == "bind" ? "/bind" : string.Empty);
-            // provider 必须编进回调 URL：企业授权完成后钉钉/企微按 OAuth2 规范原样保留 redirect_uri 的
+            // provider 必须编进回调 URL：企业授权完成后按 OAuth2 规范原样保留 redirect_uri 的
             // query（code/state 用 & 追加），前端回调页靠它确定调哪个 Provider 的 login/bind 接口——
-            // 不带的话回调页永远报「回调参数不完整」
-            var redirect = $"{callback}?provider={Uri.EscapeDataString(provider)}";
-            return Results.Redirect(p.BuildAuthorizeUrl(redirect, state), permanent: false);
+            // 不带的话回调页永远报「回调参数不完整」。同一地址在换令牌时也要用（OIDC 严格校验）。
+            var redirect = SsoLoginService.CallbackRedirectUrl(options, provider, m);
+            return Results.Redirect(await p.BuildAuthorizeUrlAsync(redirect, state, ct), permanent: false);
         });
 
         // 企业授权回调：前端回调页拿 URL 上的 code+state 提交到这里换平台 JWT
@@ -74,7 +73,7 @@ public static class AuthApiExtensions
                     statusCode: StatusCodes.Status400BadRequest);
 
             var ip = http.Connection.RemoteIpAddress?.ToString();
-            var (result, failure) = await sso.LoginAsync(provider, request.Code, ip, ct);
+            var (result, failure) = await sso.LoginAsync(provider, request.Code, request.State, ip, ct);
             return result is not null
                 ? Results.Ok(result)
                 : Results.Json(new

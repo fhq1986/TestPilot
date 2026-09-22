@@ -265,7 +265,8 @@ public class SwaggerImportTests
     [Fact]
     public async Task ImportSwagger_PrivateUrl_BlockedOnlyWhenDisabled()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        // 该用例需要开关 /api/settings（需 ManageSettings，仅 SuperAdmin）→ 用超管客户端（Task #122）
+        var client = await SuperAdminClient.CreateAsync(_factory);
         var project = await CreateProjectAsync(client);
         var url = $"http://127.0.0.1:{GetDeadPort()}/x";
 

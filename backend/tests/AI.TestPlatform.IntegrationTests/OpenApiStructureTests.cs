@@ -58,7 +58,9 @@ public class OpenApiStructureTests
 
         Assert.True(json.RootElement.TryGetProperty("info", out _));
         Assert.True(json.RootElement.TryGetProperty("paths", out var paths));
-        Assert.True(paths.GetArrayLength() > 30, $"paths 只有 {paths.GetArrayLength()} 个，明显偏少");
+        // OpenAPI 3.0 的 paths 是「对象」（路径 → 操作），不是数组——数成员而非数组长度（原写法必抛异常）
+        var pathCount = paths.EnumerateObject().Count();
+        Assert.True(pathCount > 30, $"paths 只有 {pathCount} 个，明显偏少");
     }
 
     [Fact]

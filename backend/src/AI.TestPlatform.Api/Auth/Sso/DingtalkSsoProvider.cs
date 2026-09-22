@@ -27,17 +27,19 @@ public class DingtalkSsoProvider : ISsoProvider
         && !string.IsNullOrWhiteSpace(_config.ClientId)
         && !string.IsNullOrWhiteSpace(_config.ClientSecret);
 
-    public string BuildAuthorizeUrl(string redirectUri, string state)
+    public Task<string> BuildAuthorizeUrlAsync(string redirectUri, string state, CancellationToken ct)
     {
-        return "https://login.dingtalk.com/oauth2/auth" +
-               $"?client_id={Uri.EscapeDataString(_config.ClientId ?? string.Empty)}" +
-               $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
-               "&response_type=code&scope=openid&prompt=consent" +
-               $"&state={Uri.EscapeDataString(state)}";
+        var url = "https://login.dingtalk.com/oauth2/auth" +
+                  $"?client_id={Uri.EscapeDataString(_config.ClientId ?? string.Empty)}" +
+                  $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
+                  "&response_type=code&scope=openid&prompt=consent" +
+                  $"&state={Uri.EscapeDataString(state)}";
+        return Task.FromResult(url);
     }
 
-    public async Task<SsoIdentity?> ExchangeAsync(string code, CancellationToken ct)
+    public async Task<SsoIdentity?> ExchangeAsync(SsoCallback callback, CancellationToken ct)
     {
+        var code = callback.Code;
         var http = _httpFactory.CreateClient("sso");
 
         // code 换用户级 access_token（POST JSON，key 为 camelCase 的 grantType）

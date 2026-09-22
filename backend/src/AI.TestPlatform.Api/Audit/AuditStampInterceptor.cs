@@ -19,9 +19,11 @@ namespace AI.TestPlatform.Api.Audit;
 /// 属性按**名字约定**匹配（CreatedById / CreatedAt / UpdatedById / UpdatedAt），
 /// PropertyInfo 按 Type 缓存（ConcurrentDictionary），热路径上没有反射查找开销。
 ///
-/// ⚠ 边界：`ExecuteUpdateAsync` / `ExecuteDeleteAsync` 绕过 SaveChanges，**不会**被盖章
-/// （全库搜一遍可确认这两类调用都是计数/状态类操作，不带审计语义）。
-/// </summary>
+    /// ⚠ 边界：`ExecuteUpdateAsync` / `ExecuteDeleteAsync` 绕过 SaveChanges，**不会**自动被本拦截器盖章。
+    /// 历史上有批量写确实只改计数/状态（如 Execution 状态机），但**也有批量写直接改了审计实体却只写 UpdatedAt、漏写 UpdatedById**
+    /// （见 TestPlanLinker.cs / TestPlanApiExtensions.cs 的测试计划范围编辑）。这类位点必须用
+    /// <see cref="AuditBulk.Stamp{T}"/> 显式盖章，否则「谁改的」会丢失。新增批量写审计实体时，务必接 <c>Stamp</c>。
+    /// </summary>
 public sealed class AuditStampInterceptor : SaveChangesInterceptor
 {
     private readonly IHttpContextAccessor _accessor;

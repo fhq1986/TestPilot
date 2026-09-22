@@ -49,8 +49,10 @@ using AI.TestPlatform.Api.Settings;
 using AI.TestPlatform.Api.Startup;
 using AI.TestPlatform.Api.Suites;
 using AI.TestPlatform.Api.Visual;
+using AI.TestPlatform.Application.AI;
 using AI.TestPlatform.Application.Projects;
 using AI.TestPlatform.Infrastructure.Data;
+using Microsoft.Extensions.Options;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
@@ -62,6 +64,9 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 迭代 E·③：可观测性（Serilog 结构化日志 + OpenTelemetry trace/metrics；OTLP 导出 env 门控）
+builder.AddPlatformObservability();
 
 // 生产环境启动校验：敏感配置必须通过环境变量覆盖，禁止携带开发默认值上线
 if (builder.Environment.IsProduction())
@@ -115,6 +120,8 @@ builder.Services.AddSingleton(jwtOptions);
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+// 迭代 E·①：项目级授权（成员激活式；管理员全局放行）。供 ProjectScopeFilter 与成员管理端点复用。
+builder.Services.AddScoped<IProjectAuthorization, ProjectAuthorization>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 // SSO 扫码登录（企业微信 / 钉钉）：生效配置在系统设置页维护（SystemConfig 表，保存即生效）；
 // appsettings 的 Sso 节仅作为首次种子。默认全关——不配置时登录页只显示密码表单
@@ -125,6 +132,8 @@ builder.Services.AddHttpClient("external-defects", client =>
 builder.Services.Configure<ExternalDefectOptions>(builder.Configuration.GetSection("ExternalDefects"));
 builder.Services.AddScoped<ExternalDefectPusher>();
 builder.Services.AddScoped<SsoLoginService>();
+// 迭代 E·②：标准 OIDC 发现文档缓存（按 Authority 去重、含 jwks 轮换）。必须单例——缓存要跨请求存活。
+builder.Services.AddSingleton<OidcDiscoveryCache>();
 // 用户管理（迭代 C）：账号 CRUD / 改角色 / 重置密码 / 启停用，任何变更都自增 TokenVersion 踢掉旧会话
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<AuditLogService>();
@@ -331,6 +340,9 @@ builder.Services.AddTransient<SwaggerImporter>();
 builder.Services.AddSingleton<MockService>();
 
 builder.Services.AddScoped<ElementCacheService>();
+// D4：语义向量化（默认关闭→走 ElementEmbedder 哈希，零回归；启用时改走 AIWorker /api/embed）
+builder.Services.Configure<EmbeddingOptions>(builder.Configuration.GetSection("Embedding"));
+builder.Services.AddScoped<IEmbeddingProvider, EmbeddingProvider>();
 builder.Services.AddScoped<DiagnosisService>();
 builder.Services.AddScoped<SettingsService>();
 
@@ -470,37 +482,40 @@ app.MapGroup("/api/users").MapUserApi().RequireAuthorization();
 app.MapGroup("/api/nodes").MapNodeApi().RequireAuthorization();
 app.MapGroup("/api/audit").MapAuditApi().RequireAuthorization();
 app.MapGroup("/api/recorder").MapRecorderApi().RequireAuthorization();
-app.MapGroup("/api/shared-steps").MapSharedStepApi().RequireAuthorization();
-app.MapGroup("/api/test-plans").MapTestPlanApi().RequireAuthorization();
-app.MapGroup("/api/projects").MapProjectApi().RequireAuthorization();
-app.MapGroup("/api/projects").MapProjectApiTokenApi().RequireAuthorization();
-app.MapGroup("/api/projects").MapCustomFieldApi().RequireAuthorization();
+app.MapGroup("/api/shared-steps").MapSharedStepApi().WithProjectScope(ProjectResource.SharedStep).RequireAuthorization();
+// 迭代 E·①-4：项目作用域扩到各业务模块。resource 声明 by-id 端点如何把资源 id 反查成项目 id；
+// 查询串 projectId（列表端点）由过滤器直接解析，无需在此声明。
+app.MapGroup("/api/test-plans").MapTestPlanApi().WithProjectScope(ProjectResource.TestPlan).RequireAuthorization();
+app.MapGroup("/api/projects").MapProjectApi().WithProjectScope(ProjectResource.Project).RequireAuthorization();
+app.MapGroup("/api/projects").MapProjectApiTokenApi().WithProjectScope().RequireAuthorization();
+app.MapGroup("/api/projects").MapCustomFieldApi().WithProjectScope().RequireAuthorization();
+app.MapGroup("/api/projects").MapProjectMemberApi().WithProjectScope().RequireAuthorization();
 app.MapGroup("/api/comments").MapCommentApi();
 app.MapGroup("/api/notifications").MapNotificationApi();
-app.MapGroup("/api/defects").MapDefectApi().RequireAuthorization();
-app.MapGroup("/api/requirements").MapRequirementApi().RequireAuthorization();
+app.MapGroup("/api/defects").MapDefectApi().WithProjectScope(ProjectResource.Defect).RequireAuthorization();
+app.MapGroup("/api/requirements").MapRequirementApi().WithProjectScope(ProjectResource.Requirement).RequireAuthorization();
 // 富文本图片上传（/api/artifacts/image）：需求说明、缺陷描述里插入图片用
 app.MapGroup("/api/artifacts").MapArtifactApi().RequireAuthorization();
-app.MapGroup("/api/testcases").MapTestCaseApi().RequireAuthorization();
+app.MapGroup("/api/testcases").MapTestCaseApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
 // 用例版本历史（/api/testcases/{id}/versions…）
-app.MapGroup("/api/testcases").MapTestCaseVersionApi().RequireAuthorization();
-app.MapGroup("/api/executions").MapExecutionApi().RequireAuthorization();
+app.MapGroup("/api/testcases").MapTestCaseVersionApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
+app.MapGroup("/api/executions").MapExecutionApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
 app.MapGroup("/api/ai").MapAIApi().RequireAuthorization().RequireRateLimiting("ai");
 app.MapGroup("/api/chat").MapChatApi().RequireAuthorization().RequireRateLimiting("ai");
 app.MapGroup("/api/mocks").MapMockApi().RequireAuthorization();
 app.MapGroup("/api/settings").MapSettingsApi().RequireAuthorization();
 app.MapGroup("/api/stats").MapStatsApi().RequireAuthorization();
-app.MapGroup("/api/reports").MapReportApi().RequireAuthorization();
-app.MapGroup("/api/schedules").MapScheduleApi().RequireAuthorization();
-app.MapGroup("/api/datasets").MapDataSetApi().RequireAuthorization();
-app.MapGroup("/api/suites").MapSuiteApi().RequireAuthorization();
-app.MapGroup("/api/visual").MapVisualApi().RequireAuthorization();
+app.MapGroup("/api/reports").MapReportApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
+app.MapGroup("/api/schedules").MapScheduleApi().WithProjectScope(ProjectResource.Schedule).RequireAuthorization();
+app.MapGroup("/api/datasets").MapDataSetApi().WithProjectScope(ProjectResource.DataSet).RequireAuthorization();
+app.MapGroup("/api/suites").MapSuiteApi().WithProjectScope(ProjectResource.TestSuite).RequireAuthorization();
+app.MapGroup("/api/visual").MapVisualApi().WithProjectScope(ProjectResource.VisualBaseline).RequireAuthorization();
 // 报告分享：/api/shares 管理令牌（需登录），/api/public 为免登录只读报告
 app.MapGroup("/api/shares").MapShareApi().RequireAuthorization();
 app.MapGroup("/api/public").MapPublicReportApi();
 app.MapGroup("/api/scripts").MapScriptApi().RequireAuthorization();
-app.MapGroup("/api/projects/{projectId:guid}/environments").MapProjectEnvironmentsApi().RequireAuthorization();
-app.MapGroup("/api/environments").MapEnvironmentApi().RequireAuthorization();
+app.MapGroup("/api/projects/{projectId:guid}/environments").MapProjectEnvironmentsApi().WithProjectScope().RequireAuthorization();
+app.MapGroup("/api/environments").MapEnvironmentApi().WithProjectScope(ProjectResource.Environment).RequireAuthorization();
 // Webhook 独立 token 保护（X-Webhook-Token），不加 RequireAuthorization
 app.MapGroup("/api/webhooks").MapWebhookApi();
 app.MapHub<ExecutionHub>("/hubs/execution").RequireAuthorization();
@@ -521,6 +536,11 @@ using (var scope = app.Services.CreateScope())
     {
         await db.Database.MigrateAsync();
         await DatabaseSeeder.SeedAsync(db);
+
+        // D4：语义 embedding 维度对齐（默认关闭→512，与现有列一致，零影响；启用外部 embeddings 时按需 ALTER 列维度并清空不兼容历史向量）
+        var embeddingOpts = scope.ServiceProvider.GetRequiredService<IOptions<EmbeddingOptions>>().Value;
+        var desiredDim = embeddingOpts.Enabled ? embeddingOpts.Dimensions : ElementEmbedder.Dimensions;
+        db.EnsureEmbeddingColumnDimension(desiredDim);
     }
     finally
     {

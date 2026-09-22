@@ -1,0 +1,19 @@
+{
+  "stryker-config": {
+    "project": "src/AI.TestPlatform.Api/AI.TestPlatform.Api.csproj",
+    "test-projects": [
+      "tests/AI.TestPlatform.UnitTests/AI.TestPlatform.UnitTests.csproj"
+    ],
+    "mutate": [
+      "**/AI/FixActionApplier.cs",
+      "**/AI/AgentLoopService.cs",
+      "**/Auth/ProjectScopeRules.cs",
+      "**/Auth/ProjectAuthorization.cs"
+    ],
+    "thresholds": { "high": 80, "low": 60, "break": 40 },
+    "reporters": [ "html", "progress", "json" ],
+    "output": "../.run/mutation",
+    "concurrency": 4,
+    "language": "csharp"
+  }
+}

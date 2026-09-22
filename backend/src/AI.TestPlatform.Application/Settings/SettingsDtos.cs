@@ -16,6 +16,10 @@ public record SettingsView(
     string SsoWecomSecretMasked, bool HasSsoWecomSecret,
     bool SsoDingtalkEnabled, string SsoDingtalkClientId,
     string SsoDingtalkClientSecretMasked, bool HasSsoDingtalkClientSecret,
+    // ------------------------------ 标准 OIDC
+    bool SsoOidcEnabled, string SsoOidcAuthority, string SsoOidcClientId,
+    string SsoOidcClientSecretMasked, bool HasSsoOidcClientSecret,
+    string SsoOidcDisplayName, string SsoOidcScopes,
     // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
     bool AgentLoopEnabled);
 
@@ -34,6 +38,9 @@ public record UpdateSettingsRequest(
     bool? SsoAutoProvision, string? SsoFrontendBaseUrl,
     bool? SsoWecomEnabled, string? SsoWecomCorpId, string? SsoWecomAgentId, string? SsoWecomSecret,
     bool? SsoDingtalkEnabled, string? SsoDingtalkClientId, string? SsoDingtalkClientSecret,
+    // ------------------------------ 标准 OIDC
+    bool? SsoOidcEnabled, string? SsoOidcAuthority, string? SsoOidcClientId, string? SsoOidcClientSecret,
+    string? SsoOidcDisplayName, string? SsoOidcScopes,
     /// <summary>置空 Webhook 地址（前端「清除」按钮用），如 "wecom" / "dingtalk" / "feishu"</summary>
     string? ClearWebhook,
     /// <summary>M8 Agent 自愈闭环系统级总开关（系统配置页）</summary>

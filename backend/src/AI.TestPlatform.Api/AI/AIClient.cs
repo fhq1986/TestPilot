@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AI.TestPlatform.Api.Settings;
@@ -161,6 +162,38 @@ public class AIClient
             new { test_case = testCase, failed_steps = failedSteps, similar_cases = similarCases, llm_config = await GetLlmConfigAsync(ct) }, ct);
         var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: ct);
         return MapAttributedResult(doc?.RootElement ?? default);
+    }
+
+    /// <summary>
+    /// D4：真语义向量化。把单条文本发给 AIWorker 的 /api/embed（再由其转发到 OpenAI 兼容 /v1/embeddings），
+    /// 返回模型原始向量。失败（Worker 不可达 / 熔断打开 / 格式无效）一律抛 <see cref="AIWorkerException"/>，
+    /// 由上层 <see cref="EmbeddingProvider"/> 决定是否降级为字符匹配。
+    /// </summary>
+    public async Task<float[]> EmbedAsync(string text, EmbeddingConfigDto cfg, CancellationToken ct)
+    {
+        var embeddingConfig = new Dictionary<string, string?>
+        {
+            ["base_url"] = cfg.BaseUrl,
+            ["api_key"] = cfg.ApiKey,
+            ["model"] = cfg.Model,
+        };
+        var response = await PostJsonAsync("/api/embed",
+            new { texts = new[] { text }, embedding_config = embeddingConfig }, ct);
+        var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: ct);
+        var root = doc?.RootElement ?? default;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("embeddings", out var arr)
+            || arr.ValueKind != JsonValueKind.Array)
+            throw new AIWorkerException("AI Worker 语义向量响应格式无效");
+        float[]? vector = null;
+        foreach (var item in arr.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Array) continue;
+            vector = item.EnumerateArray().Select(x => x.GetSingle()).ToArray();
+            break;
+        }
+        if (vector is null) throw new AIWorkerException("AI Worker 语义向量为空");
+        return vector;
     }
 
     /// <summary>

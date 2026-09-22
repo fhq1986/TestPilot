@@ -107,19 +107,23 @@ case "$ACTION" in
     run_dotnet test "tests/AI.TestPlatform.UnitTests" -c Debug
     ;;
   itest)
-    # 集成测试（Testcontainers 自起 PG 容器）。可选第二参为 xUnit 过滤器，如：
-    #   scripts/build.sh itest OpenApiStructureTests
+    # 集成测试。可选第二参为 xUnit 过滤器，如：scripts/build.sh itest OpenApiStructureTests
     #
-    # TESTCONTAINERS_HOST_OVERRIDE：把测试宿主拿到的容器地址从 localhost 换成 WSL eth0 IP。
-    # 原因：WSL2 的 localhost 端口转发在「并发建立连接」时会丢包——应用启动时 Npgsql
-    # 连接池同时开若干连接，全部卡在认证握手（pg_stat_activity 里 state 为 NULL），
-    # MigrateAsync 永久挂起，测试一卡半小时。单连接则 0.08s 正常，所以走 vEthernet
-    # 对 WSL eth0 IP 直连（不经过 localhost 事件转发）即可绕开。
+    # 取库方式（见 tests/AI.TestPlatform.IntegrationTests/TestApiFactory.cs）：
+    #   · 默认「外部库」：连本机既有 PostgreSQL（WSL 内容器，5432）的专用测试库，**不启容器**。
+    #     原因：本机 docker 29 + Testcontainers 3.9.0 的"容器就绪等待"永不返回——Docker API 的
+    #     create/start 均成功、容器内 PG 也已 ready，但客户端等待不结束（抓包停在 POST start 之后）；
+    #     离线源又无更新的 Testcontainers 版本，故改走外部库，保证集成测试能真跑。
+    #   · 设 ITEST_USE_TESTCONTAINERS=1 可强制回退到 Testcontainers 自起容器（CI / 兼容环境用）。
+    # 外部库连接串可用 TEST_PG_CONNECTION 覆盖；默认 TEST_PG_RECREATE=1 → 每次用全新库（更可复现）。
     ensure_stopped
-    WSL_IP="$(wsl.exe -- hostname -I 2>/dev/null | tr ' ' '\n' | head -1)"
-    if [ -n "$WSL_IP" ]; then
-      export TESTCONTAINERS_HOST_OVERRIDE="$WSL_IP"
-      echo "==> TESTCONTAINERS_HOST_OVERRIDE=$WSL_IP"
+    if [ "${ITEST_USE_TESTCONTAINERS:-0}" = "1" ]; then
+      echo "==> 使用 Testcontainers 自起 PG 容器"
+      unset TEST_PG_CONNECTION TEST_PG_RECREATE
+    else
+      export TEST_PG_CONNECTION="${TEST_PG_CONNECTION:-Host=127.0.0.1;Port=5432;Database=ai_test_integration;Username=postgres;Password=postgres}"
+      export TEST_PG_RECREATE="${TEST_PG_RECREATE:-1}"
+      echo "==> 使用外部 PostgreSQL：${TEST_PG_CONNECTION}（TEST_PG_RECREATE=${TEST_PG_RECREATE}）"
     fi
     if [ -n "${2:-}" ]; then
       run_dotnet test "tests/AI.TestPlatform.IntegrationTests" -c Debug --filter "$2"
@@ -129,8 +133,8 @@ case "$ACTION" in
     ;;
   openapi)
     # OpenAPI 结构校验（要求后端在 5210 跑、Development 环境）。
-    # 注意：集成测试路径（OpenApiStructureTests）当前存在 testhost 装配挂起的存量问题，
-    # 此脚本为等效的运行时校验入口——同口径三项检查，见 .run/rt/openapi-check.py。
+    # 注：集成测试路径（OpenApiStructureTests）现已可通过 `scripts/build.sh itest OpenApiStructureTests`
+    # 真跑（改走外部库）；本脚本仍是**不依赖测试宿主**的等效运行时校验入口，见 .run/rt/openapi-check.py。
     WIN_RT="$(cygpath -w "$ROOT/.run/rt/openapi-check.py")"
     /c/Users/44894/.workbuddy/binaries/python/versions/3.13.12/python.exe "$WIN_RT"
     ;;

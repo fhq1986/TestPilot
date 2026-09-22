@@ -158,8 +158,27 @@ public static class ExecutionMappingExtensions
         a.CreatedAt, a.CompletedAt);
 }
 
-/// <summary>M8 Agent 审批工作台列表项（跨执行，带用例/执行上下文）</summary>
-public record AgentApprovalItemDto(
-    Guid AttemptId, Guid ExecutionId, string TestCaseName,
-    int TargetStepOrder, int FixCategory, float Confidence, string? FixSummary,
-    bool? Approved, Guid? ApprovedBy, DateTime? ApprovedAt, int Result, DateTime CreatedAt);
+    /// <summary>M8 Agent 审批工作台列表项（跨执行，带用例/执行上下文）</summary>
+    public record AgentApprovalItemDto(
+        Guid AttemptId, Guid ExecutionId, string TestCaseName,
+        int TargetStepOrder, int FixCategory, float Confidence, string? FixSummary,
+        bool? Approved, Guid? ApprovedBy, DateTime? ApprovedAt, int Result, DateTime CreatedAt);
+
+    /// <summary>
+    /// M8 自愈度量（迭代 D2）：时间窗口内自愈尝试的聚合指标 + 误判检测。
+    /// SuccessRate = (Fixed + Partial) / Total；MisjudgedCount = 被标记「自愈通过」的步骤，
+    /// 在**同一用例后续执行**中于相同 StepOrder 再次失败的次数（疑似掩盖了真实缺陷）。
+    /// </summary>
+    public record AgentHealMetricsDto(
+        int TotalAttempts,
+        int Fixed,
+        int Partial,
+        int Failed,
+        int Skipped,
+        int Rejected,
+        int BudgetExhausted,
+        int Other,
+        double SuccessRate,
+        double? AvgFixMinutes,
+        Dictionary<int, int> ByCategory,
+        int MisjudgedCount);

@@ -316,6 +316,11 @@
         <el-tab-pane v-if="authStore.can(Permission.ManageProjects)" label="扩展字段" name="customFields" lazy>
           <CustomFieldCard :project-id="projectId" />
         </el-tab-pane>
+
+        <!-- ==================== 项目成员（迭代 E·① 项目级授权；仅 ManageProjects 可见） ==================== -->
+        <el-tab-pane v-if="authStore.can(Permission.ManageProjects)" label="成员" name="members" lazy>
+          <ProjectMemberCard :project-id="projectId" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
   </div>
@@ -329,6 +334,7 @@ import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
 import EnvironmentCard from '@/components/project/EnvironmentCard.vue'
 import ApiTokenCard from '@/components/project/ApiTokenCard.vue'
 import CustomFieldCard from '@/components/project/CustomFieldCard.vue'
+import ProjectMemberCard from '@/components/project/ProjectMemberCard.vue'
 import { useAuthStore } from '@/stores/auth'
 import { Permission } from '@/constants/permissions'
 import { usePagedList } from '@/composables/usePagedList'

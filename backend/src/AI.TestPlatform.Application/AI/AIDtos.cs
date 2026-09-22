@@ -81,6 +81,10 @@ public record PlanResultDto(
 
 // WebhookTriggerRequest 已迁移至 Application/CI/CiDtos.cs（CI 集成扩展了项目/模块筛选与构建上下文）
 
+/// <summary>语义向量化配置：透传给 AIWorker，再由其转发到 OpenAI 兼容的 /v1/embeddings。
+/// 留空字段由 AIWorker 的 EMBEDDING_* 环境变量兜底。</summary>
+public record EmbeddingConfigDto(string? BaseUrl, string? ApiKey, string? Model);
+
 // ---------------------------------------------------------------- AI 聊天
 public record ChatMessageDto(string Role, string Content);
 

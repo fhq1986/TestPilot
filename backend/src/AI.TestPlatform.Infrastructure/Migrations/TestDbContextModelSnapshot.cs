@@ -1083,6 +1083,37 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                     b.ToTable("ProjectApiTokens");
                 });
 
+            modelBuilder.Entity("AI.TestPlatform.Domain.Entities.ProjectMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ProjectId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ProjectMembers");
+                });
+
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.RecorderSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1539,6 +1570,29 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("SsoFrontendBaseUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SsoOidcAuthority")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SsoOidcClientId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SsoOidcClientSecret")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SsoOidcDisplayName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("SsoOidcEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SsoOidcScopes")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -2637,6 +2691,25 @@ namespace AI.TestPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("AI.TestPlatform.Domain.Entities.ProjectMember", b =>
+                {
+                    b.HasOne("AI.TestPlatform.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AI.TestPlatform.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("AI.TestPlatform.Domain.Entities.RecorderSession", b =>

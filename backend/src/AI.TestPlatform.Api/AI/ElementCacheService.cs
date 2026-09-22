@@ -36,12 +36,17 @@ public class ElementCacheService
     /// </summary>
     private const double VectorThreshold = 0.30;
 
+    /// <summary>语义（单位向量）近邻阈值：余弦相似度 >= 0.6 视为同一元素；哈希嵌入沿用 0.30。</summary>
+    private const double SemanticVectorThreshold = 0.6;
+
     private readonly TestDbContext _db;
+    private readonly IEmbeddingProvider _embedding;
     private readonly ILogger<ElementCacheService> _logger;
 
-    public ElementCacheService(TestDbContext db, ILogger<ElementCacheService> logger)
+    public ElementCacheService(TestDbContext db, IEmbeddingProvider embedding, ILogger<ElementCacheService> logger)
     {
         _db = db;
+        _embedding = embedding;
         _logger = logger;
     }
 
@@ -63,25 +68,40 @@ public class ElementCacheService
             return Latest(exact);
 
         // ---- 向量近邻：数据库侧按余弦距离排序取最近几条（只算已回填向量的行）
-        var queryVector = new Vector(ElementEmbedder.Embed(description));
-        var vectorCandidates = await _db.AIElementCaches.AsNoTracking()
-            .Where(e => e.ProjectId == projectId && e.PageUrl == normalized
-                        && e.ElementDescription != description && e.Embedding != null)
-            .OrderBy(e => e.Embedding!.CosineDistance(queryVector))
-            .Take(5)
-            .Select(e => new { e.Id, Distance = (double?)e.Embedding!.CosineDistance(queryVector) })
-            .ToListAsync(ct);
-        var nearest = vectorCandidates
-            .Where(c => (1 - (c.Distance ?? 1)) >= VectorThreshold)
-            .Select(c => caches.FirstOrDefault(x => x.Id == c.Id))
-            .FirstOrDefault(c => c is not null);
-        if (nearest is not null)
+        // D4：向量由 IEmbeddingProvider 产生（语义或哈希）。向量化失败时退回字符匹配，不阻断本次命中。
+        float[]? queryVec = null;
+        try
         {
-            var similarity = 1 - vectorCandidates.First(c => c.Id == nearest.Id).Distance!.Value;
-            _logger.LogInformation(
-                "元素缓存向量命中（相似度 {Score:F2}）：「{Target}」↔「{Cached}」，页面 {Page}",
-                similarity, description, nearest.ElementDescription, normalized);
-            return Latest(nearest);
+            queryVec = await _embedding.EmbedAsync(description, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "向量化失败，跳过向量近邻，退回字符匹配");
+        }
+
+        if (queryVec is not null)
+        {
+            var queryVector = new Vector(queryVec);
+            var threshold = _embedding.IsSemantic ? SemanticVectorThreshold : VectorThreshold;
+            var vectorCandidates = await _db.AIElementCaches.AsNoTracking()
+                .Where(e => e.ProjectId == projectId && e.PageUrl == normalized
+                            && e.ElementDescription != description && e.Embedding != null)
+                .OrderBy(e => e.Embedding!.CosineDistance(queryVector))
+                .Take(5)
+                .Select(e => new { e.Id, Distance = (double?)e.Embedding!.CosineDistance(queryVector) })
+                .ToListAsync(ct);
+            var nearest = vectorCandidates
+                .Where(c => (1 - (c.Distance ?? 1)) >= threshold)
+                .Select(c => caches.FirstOrDefault(x => x.Id == c.Id))
+                .FirstOrDefault(c => c is not null);
+            if (nearest is not null)
+            {
+                var similarity = 1 - vectorCandidates.First(c => c.Id == nearest.Id).Distance!.Value;
+                _logger.LogInformation(
+                    "元素缓存向量命中（相似度 {Score:F2}，{Kind}）：「{Target}」↔「{Cached}」，页面 {Page}",
+                    similarity, _embedding.IsSemantic ? "语义" : "哈希", description, nearest.ElementDescription, normalized);
+                return Latest(nearest);
+            }
         }
 
         var fuzzy = DescriptionMatcher.BestMatch(caches, e => e.ElementDescription, description);
@@ -97,14 +117,15 @@ public class ElementCacheService
             fuzzy.Value.Score, description, fuzzy.Value.Candidate.ElementDescription, normalized);
 
         // 惰性回填：字符命中的历史行若还没有向量，顺手补上——
-        // 不专门写回填迁移（嵌入逻辑是 C# 代码，SQL 里做不了），让流量自然补齐
+        // 不专门写回填迁移（嵌入逻辑是 C# 代码，SQL 里做不了），让流量自然补齐。
+        // D4：回填同样走 IEmbeddingProvider；向量化失败时跳过本条（下次命中再补）。
         if (fuzzy.Value.Candidate.Embedding is null)
         {
             try
             {
+                var backfillVec = new Vector(await _embedding.EmbedAsync(fuzzy.Value.Candidate.ElementDescription, ct));
                 await _db.AIElementCaches.Where(e => e.Id == fuzzy.Value.Candidate.Id)
-                    .ExecuteUpdateAsync(s => s.SetProperty(
-                        e => e.Embedding, new Vector(ElementEmbedder.Embed(fuzzy.Value.Candidate.ElementDescription))), ct);
+                    .ExecuteUpdateAsync(s => s.SetProperty(e => e.Embedding, backfillVec), ct);
             }
             catch (Exception ex)
             {
@@ -145,8 +166,17 @@ public class ElementCacheService
             _db.AIElementCaches.Add(cache);
         }
         // 新增与更新都刷新向量：描述不变则重算结果相同（确定性），成本可忽略；
-        // 描述被编辑过的行会拿到新向量，避免"文本改了向量还是旧的"这种静默漂移
-        cache.Embedding = new Vector(ElementEmbedder.Embed(description));
+        // 描述被编辑过的行会拿到新向量，避免"文本改了向量还是旧的"这种静默漂移。
+        // D4：向量由 IEmbeddingProvider 产生；向量化失败时该条不写向量（后续惰性回填），不阻断保存。
+        try
+        {
+            cache.Embedding = new Vector(await _embedding.EmbedAsync(description, ct));
+        }
+        catch (Exception ex)
+        {
+            cache.Embedding = null;
+            _logger.LogDebug(ex, "保存时向量化失败，该条不写向量（后续惰性回填）");
+        }
         cache.SelectorHistory.Add(new SelectorHistoryEntry
         {
             Type = selectorType,

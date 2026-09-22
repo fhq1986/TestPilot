@@ -372,8 +372,10 @@ public static class TestPlanApiExtensions
             await db.SaveChangesAsync(ct);
 
             var count = await ApplyItemsAsync(db, id, request.TestCaseIds, ct);
+            var now = DateTime.UtcNow;
+            var userId = db.ResolveAuditUserId();
             await db.TestPlans.Where(p => p.Id == id)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow), ct);
+                .ExecuteUpdateAsync(s => s.Stamp(userId, now), ct);
 
             return Results.Ok(new { count });
         }).WithPermission(Permission.ManageTestPlans).WithAudit("SetScope", "TestPlan");
@@ -438,8 +440,10 @@ public static class TestPlanApiExtensions
             }
 
             await db.SaveChangesAsync(ct);
+            var now = DateTime.UtcNow;
+            var userId = db.ResolveAuditUserId();
             await db.TestPlans.Where(p => p.Id == id)
-                .ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow), ct);
+                .ExecuteUpdateAsync(s => s.Stamp(userId, now), ct);
 
             var total = await db.TestPlanItems.CountAsync(i => i.PlanId == id, ct);
             return Results.Ok(new

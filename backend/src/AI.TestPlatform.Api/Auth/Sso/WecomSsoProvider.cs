@@ -28,7 +28,7 @@ public class WecomSsoProvider : ISsoProvider
         && !string.IsNullOrWhiteSpace(_config.CorpId)
         && !string.IsNullOrWhiteSpace(_config.Secret);
 
-    public string BuildAuthorizeUrl(string redirectUri, string state)
+    public Task<string> BuildAuthorizeUrlAsync(string redirectUri, string state, CancellationToken ct)
     {
         // 企微新版扫码登录页（wwlogin）。login_type=CorpApp 表示自建应用网页授权。
         var url = $"https://login.work.weixin.qq.com/wwlogin/sso/login" +
@@ -36,11 +36,12 @@ public class WecomSsoProvider : ISsoProvider
                   $"&redirect_uri={Uri.EscapeDataString(redirectUri)}&state={Uri.EscapeDataString(state)}";
         if (int.TryParse(_config.AgentId, out var agentId))
             url += $"&agentid={agentId}";
-        return url;
+        return Task.FromResult(url);
     }
 
-    public async Task<SsoIdentity?> ExchangeAsync(string code, CancellationToken ct)
+    public async Task<SsoIdentity?> ExchangeAsync(SsoCallback callback, CancellationToken ct)
     {
+        var code = callback.Code;
         var token = await GetCorpAccessTokenAsync(ct);
         if (token is null)
             return null;

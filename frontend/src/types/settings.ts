@@ -41,6 +41,14 @@ export interface SettingsView {
   ssoDingtalkClientId: string
   ssoDingtalkClientSecretMasked: string
   hasSsoDingtalkClientSecret: boolean
+  // ------------------------------ 标准 OIDC
+  ssoOidcEnabled: boolean
+  ssoOidcAuthority: string
+  ssoOidcClientId: string
+  ssoOidcClientSecretMasked: string
+  hasSsoOidcClientSecret: boolean
+  ssoOidcDisplayName: string
+  ssoOidcScopes: string
   // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
   agentLoopEnabled: boolean
 }
@@ -77,6 +85,14 @@ export interface UpdateSettingsPayload {
   ssoDingtalkClientId?: string | null
   /** 留空表示保留原值 */
   ssoDingtalkClientSecret?: string | null
+  // ------------------------------ 标准 OIDC
+  ssoOidcEnabled?: boolean | null
+  ssoOidcAuthority?: string | null
+  ssoOidcClientId?: string | null
+  /** 留空表示保留原值 */
+  ssoOidcClientSecret?: string | null
+  ssoOidcDisplayName?: string | null
+  ssoOidcScopes?: string | null
   // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
   agentLoopEnabled?: boolean | null
   /** 需要清空的字段，逗号分隔：wecom,dingtalk,feishu,mailto,smtppassword */

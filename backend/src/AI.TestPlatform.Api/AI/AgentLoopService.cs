@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using AI.TestPlatform.Api.Execution;
 using AI.TestPlatform.Api.Notifications;
@@ -6,6 +8,7 @@ using AI.TestPlatform.Application.AI;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace AI.TestPlatform.Api.AI;
@@ -28,13 +31,14 @@ public class AgentLoopService
     private readonly SettingsService _settings;
     private readonly Notifications.InAppNotificationService _notifications;
     private readonly AgentLoopOptions _options;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<AgentLoopService> _logger;
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     public AgentLoopService(TestDbContext db, TestRunner runner, AIClient ai, AILivenessBreaker breaker,
         SettingsService settings, Notifications.InAppNotificationService notifications,
-        IOptions<AgentLoopOptions> options, ILogger<AgentLoopService> logger)
+        IOptions<AgentLoopOptions> options, IMemoryCache cache, ILogger<AgentLoopService> logger)
     {
         _db = db;
         _runner = runner;
@@ -43,6 +47,7 @@ public class AgentLoopService
         _settings = settings;
         _notifications = notifications;
         _options = options.Value;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -155,17 +160,9 @@ public class AgentLoopService
             if (ct.IsCancellationRequested)
                 break;
 
-            // 熔断已下沉到 AIClient（所有 AI 调用的统一入口），这里只做优雅降级，不再重复包裹
-            AttributedResultDto? attributed;
-            try
-            {
-                attributed = await _ai.AttributeAsync(testCaseSummary, evidence, similar, ct);
-            }
-            catch (AIWorkerException ex)
-            {
-                _logger.LogInformation("归因调用失败，跳过闭环：{Message}", ex.Message);
-                attributed = null;
-            }
+            // 熔断已下沉到 AIClient（所有 AI 调用的统一入口），这里只做优雅降级，不再重复包裹。
+            // D3：以「用例指纹 + 错误签名 + 尝试序」为键查/写归因结果缓存，跳过重复 LLM 调用。
+            var attributed = await GetAttributionAsync(testCase, failed, testCaseSummary, evidence, similar, attempt, ct);
             calls++;
             if (attributed is null)
                 break; // LLM 不可用 / 熔断：预算已计一次，直接结束
@@ -438,6 +435,76 @@ public class AgentLoopService
                 return similar;
         }
         return new List<SimilarCaseEvidence>();
+    }
+
+    /// <summary>
+    /// D3 归因结果缓存：以「用例指纹 + 错误签名 + 尝试序」为键。命中则跳过 LLM 调用直接复用，
+    /// 未命中则调用 <see cref="AIClient.AttributeAsync"/> 并写回缓存（TTL 取 <see cref="AgentLoopOptions.AttributionCacheTtlMinutes"/>）。
+    ///
+    /// 安全边界：缓存只存储 LLM 的「诊断结论」，下游的置信度门 / 破坏性动作强制审批 / 重跑验证仍逐次执行，
+    /// 因此复用缓存绝不会绕过任何安全闸门或降低验证强度——最坏情况只是一次本就失败的修复被重试。
+    /// 键含 attempt：保证同一执行内多轮尝试互不命中（保留策略变化），只在「不同执行、相同失败」时去重。
+    /// </summary>
+    private async Task<AttributedResultDto?> GetAttributionAsync(
+        TestCase testCase, List<ExecutionResult> failed,
+        Dictionary<string, object?> testCaseSummary, List<FailedStepEvidence> evidence,
+        List<SimilarCaseEvidence> similar, int attempt, CancellationToken ct)
+    {
+        var key = BuildAttrCacheKey(testCase, failed, attempt);
+        if (_cache.TryGetValue<AttributedResultDto>(key, out var cached))
+        {
+            _logger.LogInformation("命中归因结果缓存，跳过 LLM 调用（key={Key}）", key);
+            return cached;
+        }
+
+        AttributedResultDto? attributed;
+        try
+        {
+            attributed = await _ai.AttributeAsync(testCaseSummary, evidence, similar, ct);
+        }
+        catch (AIWorkerException ex)
+        {
+            _logger.LogInformation("归因调用失败，跳过闭环：{Message}", ex.Message);
+            return null;
+        }
+
+        if (attributed is not null)
+        {
+            var ttl = TimeSpan.FromMinutes(Math.Max(1, _options.AttributionCacheTtlMinutes));
+            _cache.Set(key, attributed, ttl);
+        }
+        return attributed;
+    }
+
+    /// <summary>
+    /// 缓存键：用例指纹（步骤结构，编辑用例即失效）+ 错误签名（与 <see cref="FindSimilarAsync"/> 同源的错误前缀）
+    /// + 尝试序（隔离同执行内多轮）。三者经 SHA256 折叠，避免键过长或含敏感信息。
+    /// </summary>
+    private static string BuildAttrCacheKey(TestCase testCase, List<ExecutionResult> failed, int attempt)
+    {
+        var fp = new StringBuilder();
+        foreach (var s in testCase.Steps.OrderBy(x => x.StepOrder))
+            fp.Append(s.ActionType).Append('|')
+              .Append(s.Config?.Selector?.Value ?? "").Append('|')
+              .Append(s.Config?.Value ?? "").Append('|')
+              .Append(s.AIElementDescription ?? "").Append(';');
+
+        var err = new StringBuilder();
+        foreach (var f in failed.OrderBy(x => x.StepOrder))
+        {
+            var prefix = string.IsNullOrEmpty(f.ErrorMessage)
+                ? ""
+                : f.ErrorMessage[..Math.Min(80, f.ErrorMessage.Length)];
+            err.Append(f.StepOrder).Append('|').Append(f.Status).Append('|').Append(prefix).Append(';');
+        }
+
+        return $"agent:attr:{Sha256(fp.ToString())}:{Sha256(err.ToString())}:{attempt}";
+    }
+
+    private static string Sha256(string input)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(bytes);
     }
 
     private Task<global::AI.TestPlatform.Domain.Entities.Environment?> LoadEnvironmentAsync(Guid? envId, CancellationToken ct) =>

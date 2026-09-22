@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  迭代 E·④ 覆盖率采集配置（coverlet XPlat Code Coverage）。
+
+  只统计**业务程序集** Api / Application 的覆盖率：Infrastructure 大量是 EF 生成物/迁移，
+  Domain 多为 POCO，把它们混进来会把分母灌水、让门禁失去意义。
+  排除测试自身、迁移与编译器生成代码（否则"自动属性 getter"之类的无意义行会稀释信号）。
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Include>[AI.TestPlatform.Api]*,[AI.TestPlatform.Application]*</Include>
+          <Exclude>
+            [*Tests*]*,
+            [AI.TestPlatform.Infrastructure.Migrations.*]*,
+            [AI.TestPlatform.Api]AI.TestPlatform.Api.Migrations.*
+          </Exclude>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

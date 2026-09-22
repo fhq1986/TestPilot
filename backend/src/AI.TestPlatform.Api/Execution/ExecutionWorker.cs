@@ -3,6 +3,7 @@ using AI.TestPlatform.Api.AI;
 using AI.TestPlatform.Api.Hubs;
 using AI.TestPlatform.Api.Modules.Defects;
 using AI.TestPlatform.Api.Notifications;
+using AI.TestPlatform.Api.Observability;
 using AI.TestPlatform.Api.TestPlans;
 using AI.TestPlatform.Application.Executions;
 using AI.TestPlatform.Domain.Entities;
@@ -311,6 +312,12 @@ public class ExecutionWorker : BackgroundService
 
     private async Task ProcessAsync(Guid executionId, CancellationToken ct)
     {
+        // 迭代 E·③：一次执行的完整链路（加载→跑用例→自愈→落库）建一个 trace span，
+        // 打 executionId / node 标签；下游 HttpClient（→AIWorker）自动挂到同一 trace。
+        using var activity = PlatformTelemetry.Source.StartActivity("execution.process");
+        activity?.SetTag("execution.id", executionId);
+        activity?.SetTag("node", InstanceId);
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
         var runner = scope.ServiceProvider.GetRequiredService<TestRunner>();

@@ -330,6 +330,38 @@
             </el-form-item>
           </div>
 
+          <el-divider content-position="left">标准 OIDC（Azure AD / Okta / Keycloak / Auth0 / Google）</el-divider>
+          <el-form-item label="启用标准 OIDC 登录">
+            <el-switch v-model="ssoForm.oidcEnabled" />
+          </el-form-item>
+          <div class="smtp-grid">
+            <el-form-item label="Authority（Issuer）">
+              <el-input v-model="ssoForm.oidcAuthority" :disabled="!ssoForm.oidcEnabled"
+                placeholder="https://login.microsoftonline.com/{tenant}/v2.0" />
+            </el-form-item>
+            <el-form-item label="ClientId">
+              <el-input v-model="ssoForm.oidcClientId" :disabled="!ssoForm.oidcEnabled"
+                placeholder="应用注册的 Client ID" />
+            </el-form-item>
+            <el-form-item label="ClientSecret">
+              <el-input v-model="ssoForm.oidcClientSecret" type="password" show-password autocomplete="new-password"
+                :placeholder="ssoOidcSecretPlaceholder" :disabled="!ssoForm.oidcEnabled" />
+            </el-form-item>
+          </div>
+          <div class="smtp-grid">
+            <el-form-item label="登录按钮名称">
+              <el-input v-model="ssoForm.oidcDisplayName" :disabled="!ssoForm.oidcEnabled" placeholder="单点登录" />
+            </el-form-item>
+            <el-form-item label="Scope">
+              <el-input v-model="ssoForm.oidcScopes" :disabled="!ssoForm.oidcEnabled"
+                placeholder="openid profile email" />
+            </el-form-item>
+          </div>
+          <div class="switch-hint">
+            端点全部从 {Authority}/.well-known/openid-configuration 自动发现；IdP 侧回调地址（Redirect URI）填
+            {FrontendBaseUrl}/login/sso?provider=oidc
+          </div>
+
           <el-form-item>
             <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
           </el-form-item>
@@ -445,6 +477,12 @@ const ssoForm = reactive({
   dingtalkEnabled: false,
   dingtalkClientId: '',
   dingtalkClientSecret: '',
+  oidcEnabled: false,
+  oidcAuthority: '',
+  oidcClientId: '',
+  oidcClientSecret: '',
+  oidcDisplayName: '',
+  oidcScopes: '',
 })
 
 const ssoWecomSecretPlaceholder = computed(() =>
@@ -455,6 +493,11 @@ const ssoWecomSecretPlaceholder = computed(() =>
 const ssoDingtalkSecretPlaceholder = computed(() =>
   view.value?.hasSsoDingtalkClientSecret
     ? `已配置（${view.value.ssoDingtalkClientSecretMasked}），留空保持不变`
+    : '未配置',
+)
+const ssoOidcSecretPlaceholder = computed(() =>
+  view.value?.hasSsoOidcClientSecret
+    ? `已配置（${view.value.ssoOidcClientSecretMasked}），留空保持不变`
     : '未配置',
 )
 
@@ -748,6 +791,12 @@ const applyView = (v: SettingsView) => {
   ssoForm.dingtalkEnabled = v.ssoDingtalkEnabled ?? false
   ssoForm.dingtalkClientId = v.ssoDingtalkClientId ?? ''
   ssoForm.dingtalkClientSecret = ''
+  ssoForm.oidcEnabled = v.ssoOidcEnabled ?? false
+  ssoForm.oidcAuthority = v.ssoOidcAuthority ?? ''
+  ssoForm.oidcClientId = v.ssoOidcClientId ?? ''
+  ssoForm.oidcClientSecret = ''
+  ssoForm.oidcDisplayName = v.ssoOidcDisplayName ?? ''
+  ssoForm.oidcScopes = v.ssoOidcScopes ?? ''
   // M8 Agent 自愈闭环系统级总开关（后端未升级时缺字段，用 ?? false 兜底）
   agentForm.enabled = v.agentLoopEnabled ?? false
 }
@@ -798,6 +847,12 @@ const handleSave = async () => {
       ssoDingtalkEnabled: ssoForm.dingtalkEnabled,
       ssoDingtalkClientId: ssoForm.dingtalkClientId.trim(),
       ssoDingtalkClientSecret: ssoForm.dingtalkClientSecret.trim() || null,
+      ssoOidcEnabled: ssoForm.oidcEnabled,
+      ssoOidcAuthority: ssoForm.oidcAuthority.trim(),
+      ssoOidcClientId: ssoForm.oidcClientId.trim(),
+      ssoOidcClientSecret: ssoForm.oidcClientSecret.trim() || null,
+      ssoOidcDisplayName: ssoForm.oidcDisplayName.trim(),
+      ssoOidcScopes: ssoForm.oidcScopes.trim(),
       agentLoopEnabled: agentForm.enabled,
     })
     await load()

@@ -40,6 +40,13 @@ public class SettingsService
             SsoDingtalkEnabled = _configuration.GetValue<bool>("Sso:Providers:dingtalk:Enabled"),
             SsoDingtalkClientId = _configuration["Sso:Providers:dingtalk:ClientId"] ?? "",
             SsoDingtalkClientSecret = _configuration["Sso:Providers:dingtalk:ClientSecret"] ?? "",
+            // 标准 OIDC 种子
+            SsoOidcEnabled = _configuration.GetValue<bool>("Sso:Providers:oidc:Enabled"),
+            SsoOidcAuthority = _configuration["Sso:Providers:oidc:Authority"] ?? "",
+            SsoOidcClientId = _configuration["Sso:Providers:oidc:ClientId"] ?? "",
+            SsoOidcClientSecret = _configuration["Sso:Providers:oidc:ClientSecret"] ?? "",
+            SsoOidcDisplayName = _configuration["Sso:Providers:oidc:DisplayName"] ?? "",
+            SsoOidcScopes = _configuration["Sso:Providers:oidc:Scopes"] ?? "",
         };
         _db.SystemConfigs.Add(config);
         await _db.SaveChangesAsync(ct);
@@ -85,6 +92,14 @@ public class SettingsService
         if (request.SsoDingtalkClientId != null) config.SsoDingtalkClientId = request.SsoDingtalkClientId.Trim();
         if (!string.IsNullOrWhiteSpace(request.SsoDingtalkClientSecret))
             config.SsoDingtalkClientSecret = request.SsoDingtalkClientSecret.Trim();
+        // 标准 OIDC
+        if (request.SsoOidcEnabled.HasValue) config.SsoOidcEnabled = request.SsoOidcEnabled.Value;
+        if (request.SsoOidcAuthority != null) config.SsoOidcAuthority = request.SsoOidcAuthority.Trim();
+        if (request.SsoOidcClientId != null) config.SsoOidcClientId = request.SsoOidcClientId.Trim();
+        if (!string.IsNullOrWhiteSpace(request.SsoOidcClientSecret))
+            config.SsoOidcClientSecret = request.SsoOidcClientSecret.Trim();
+        if (request.SsoOidcDisplayName != null) config.SsoOidcDisplayName = request.SsoOidcDisplayName.Trim();
+        if (request.SsoOidcScopes != null) config.SsoOidcScopes = request.SsoOidcScopes.Trim();
 
         // 显式清空（前端「清除」按钮）：wecom / dingtalk / feishu / mailto / smtppassword
         foreach (var key in (request.ClearWebhook ?? string.Empty)
@@ -138,6 +153,9 @@ public class SettingsService
         Mask(c.SsoWecomSecret), !string.IsNullOrEmpty(c.SsoWecomSecret),
         c.SsoDingtalkEnabled, c.SsoDingtalkClientId,
         Mask(c.SsoDingtalkClientSecret), !string.IsNullOrEmpty(c.SsoDingtalkClientSecret),
+        c.SsoOidcEnabled, c.SsoOidcAuthority, c.SsoOidcClientId,
+        Mask(c.SsoOidcClientSecret), !string.IsNullOrEmpty(c.SsoOidcClientSecret),
+        c.SsoOidcDisplayName, c.SsoOidcScopes,
         c.AgentLoopEnabled);
 
     /// <summary>
@@ -168,6 +186,15 @@ public class SettingsService
                     Enabled = c.SsoDingtalkEnabled,
                     ClientId = c.SsoDingtalkClientId,
                     ClientSecret = c.SsoDingtalkClientSecret,
+                },
+                ["oidc"] = new SsoProviderConfig
+                {
+                    Enabled = c.SsoOidcEnabled,
+                    ClientId = c.SsoOidcClientId,
+                    ClientSecret = c.SsoOidcClientSecret,
+                    Authority = c.SsoOidcAuthority,
+                    DisplayName = string.IsNullOrWhiteSpace(c.SsoOidcDisplayName) ? null : c.SsoOidcDisplayName,
+                    Scopes = string.IsNullOrWhiteSpace(c.SsoOidcScopes) ? null : c.SsoOidcScopes,
                 },
                 ["mock"] = new SsoProviderConfig
                 {

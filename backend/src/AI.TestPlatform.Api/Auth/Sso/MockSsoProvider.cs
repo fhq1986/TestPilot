@@ -15,16 +15,17 @@ public class MockSsoProvider : ISsoProvider
     public string DisplayName => _config.DisplayName ?? "演示登录";
     public bool IsEnabled => _config.Enabled;
 
-    public string BuildAuthorizeUrl(string redirectUri, string state)
+    public Task<string> BuildAuthorizeUrlAsync(string redirectUri, string state, CancellationToken ct)
     {
         // Mock 没有「人工扫码」环节：直接以匿名身份发一个 code 回到前端回调页。
         var identity = string.IsNullOrWhiteSpace(_config.Secret) ? "demo" : _config.Secret!;
         var sep = redirectUri.Contains('?') ? '&' : '?';
-        return $"{redirectUri}{sep}code=mock:{Uri.EscapeDataString(identity)}&state={Uri.EscapeDataString(state)}";
+        return Task.FromResult($"{redirectUri}{sep}code=mock:{Uri.EscapeDataString(identity)}&state={Uri.EscapeDataString(state)}");
     }
 
-    public Task<SsoIdentity?> ExchangeAsync(string code, CancellationToken ct)
+    public Task<SsoIdentity?> ExchangeAsync(SsoCallback callback, CancellationToken ct)
     {
+        var code = callback.Code;
         if (!code.StartsWith("mock:", StringComparison.OrdinalIgnoreCase))
             return Task.FromResult<SsoIdentity?>(null);
 

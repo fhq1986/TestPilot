@@ -19,7 +19,7 @@ public class SettingsApiTests
     [Fact]
     public async Task GetSettings_SeedsDefaults_ReturnsMasked()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var client = await SuperAdminClient.CreateAsync(_factory);
 
         var response = await client.GetAsync("/api/settings");
 
@@ -37,7 +37,7 @@ public class SettingsApiTests
     [Fact]
     public async Task UpdateSettings_AllowPrivateNetworkImport_Persists()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var client = await SuperAdminClient.CreateAsync(_factory);
         try
         {
             var put = await client.PutAsJsonAsync("/api/settings",
@@ -62,7 +62,7 @@ public class SettingsApiTests
     [Fact]
     public async Task UpdateSettings_PersistsAndMasks()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var client = await SuperAdminClient.CreateAsync(_factory);
 
         var put = await client.PutAsJsonAsync("/api/settings", new
         {
@@ -87,7 +87,7 @@ public class SettingsApiTests
     [Fact]
     public async Task UpdateSettings_EmptyKey_KeepsExisting()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var client = await SuperAdminClient.CreateAsync(_factory);
 
         var set = await client.PutAsJsonAsync("/api/settings", new { aiApiKey = "sk-test1234567890" });
         set.EnsureSuccessStatusCode();
@@ -104,7 +104,7 @@ public class SettingsApiTests
     [Fact]
     public async Task TestConnection_WithStub_ReturnsOk()
     {
-        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var client = await SuperAdminClient.CreateAsync(_factory);
 
         var put = await client.PutAsJsonAsync("/api/settings", new { aiModel = "ping-assert-model" });
         put.EnsureSuccessStatusCode();
@@ -124,7 +124,7 @@ public class SettingsApiTests
     [Fact]
     public async Task Webhook_AfterTokenChange_OldToken401_NewToken202()
     {
-        var auth = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var auth = await SuperAdminClient.CreateAsync(_factory);
         try
         {
             var put = await auth.PutAsJsonAsync("/api/settings", new { webhookToken = "new-token-xxx" });

@@ -431,6 +431,14 @@ public static class ExecutionApiExtensions
             return Results.Ok(new PagedResult<AgentApprovalItemDto>(items, total, page, pageSize));
         }).WithPermission(Permission.ViewExecutions);
 
+        // M8 自愈度量（迭代 D2）：时间窗口内自愈尝试的聚合指标 + 误判检测，供管理看板消费。
+        group.MapGet("/agent-heal-metrics", async (TestDbContext db, CancellationToken ct,
+            [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null) =>
+        {
+            var metrics = await AgentHealMetrics.ComputeAsync(db, from, to, ct);
+            return Results.Ok(metrics);
+        }).WithPermission(Permission.ViewExecutions);
+
         // 该执行里「已经转成缺陷」的步骤：执行详情页的「缺陷」列据此避免重复转单。
         // 两条路径都要覆盖——「创建新缺陷」写的是 Defect.FoundInExecutionId/FoundInStepOrder，
         // 而「认领已有缺陷」只写 DefectOccurrence 流水，所以必须并上复现流水。

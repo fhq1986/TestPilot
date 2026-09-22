@@ -16,8 +16,39 @@ public class TestDbContext : DbContext
 
     public TestDbContext(DbContextOptions<TestDbContext> options) : base(options) { }
 
+    /// <summary>
+    /// D4：将元素缓存向量列（AIElementCaches.Embedding）的 pgvector 维度对齐到期望值。
+    /// 默认关闭语义检索时 desired=512（与现有列一致，零影响）；启用外部 embeddings 时 desired=模型维度，
+    /// 若与当前列维度不同则清空不兼容的历史向量并 ALTER 列类型。幂等：仅在维度变化时执行，
+    /// 避免每次启动清空缓存。维度是整数字面量（DDL 的 TYPE 名不能参数化），故拼接而非参数化。
+    /// </summary>
+    public void EnsureEmbeddingColumnDimension(int desiredDim)
+    {
+        // 优先用 pgvector 的 vector_dims 读取已有向量的真实维度（最可靠），其次回退到列 typmod
+        int current = 0;
+        var sample = Database.SqlQuery<int?>($"SELECT vector_dims(\"Embedding\") FROM \"AIElementCaches\" WHERE \"Embedding\" IS NOT NULL LIMIT 1").ToList();
+        int? firstSample = sample.FirstOrDefault();
+        if (firstSample is { } sv)
+        {
+            current = sv;
+        }
+        else
+        {
+            var tm = Database.SqlQuery<int?>($"SELECT NULLIF(a.atttypmod, -1) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid WHERE c.relname = 'AIElementCaches' AND a.attname = 'Embedding'").ToList();
+            int? firstTm = tm.FirstOrDefault();
+            if (firstTm is { } tv) current = tv;
+        }
+
+        if (current == desiredDim) return;
+
+        // 维度变化：现有向量维度不兼容无法隐式转换，先清空（由流量惰性回填），再调整列类型
+        Database.ExecuteSqlRaw("UPDATE \"AIElementCaches\" SET \"Embedding\" = NULL WHERE \"Embedding\" IS NOT NULL;");
+        Database.ExecuteSqlRaw("ALTER TABLE \"AIElementCaches\" ALTER COLUMN \"Embedding\" TYPE vector(" + desiredDim + ");");
+    }
+
     public DbSet<User> Users => Set<User>();
     public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<TestCase> TestCases => Set<TestCase>();
     public DbSet<TestCaseVersion> TestCaseVersions => Set<TestCaseVersion>();
     public DbSet<TestStep> TestSteps => Set<TestStep>();
@@ -229,6 +260,19 @@ public class TestDbContext : DbContext
             // M8 Agent 自愈项目级开关（系统级总开关在 SystemConfig）。默认全部关闭。
             entity.Property(p => p.AgentLoopEnabled).HasDefaultValue(false);
             entity.Property(p => p.TreatAgentHealedAsPass).HasDefaultValue(false);
+        });
+
+        // 迭代 E·①：项目成员（项目级授权）。唯一索引保证同一用户在同一个项目只有一个角色；
+        // 删项目/删用户都级联清成员关系（成员关系是附属数据，不构成"留痕"）。
+        modelBuilder.Entity<ProjectMember>(entity =>
+        {
+            entity.HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();
+            // 按用户反查「我参与了哪些项目」是列表过滤的最常用路径
+            entity.HasIndex(m => m.UserId);
+            entity.HasOne(m => m.Project).WithMany().HasForeignKey(m => m.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<TestCase>(entity =>

@@ -80,6 +80,7 @@ public class SsoLoginService
         {
             "wecom" => ActivatorUtilities.CreateInstance<WecomSsoProvider>(_services, config),
             "dingtalk" => ActivatorUtilities.CreateInstance<DingtalkSsoProvider>(_services, config),
+            "oidc" => ActivatorUtilities.CreateInstance<OidcSsoProvider>(_services, config),
             "mock" => ActivatorUtilities.CreateInstance<MockSsoProvider>(_services, config),
             _ => null,
         };
@@ -121,18 +122,33 @@ public class SsoLoginService
     }
 
     /// <summary>
+    /// 企业授权完成后回跳的**完整回调地址**（含 provider 查询参数）。
+    /// <para>provider 必须编进回调 URL：企业按 OAuth2 规范原样保留 redirect_uri 的 query（code/state 用 & 追加），
+    /// 前端回调页靠它确定调哪个 Provider 的 login/bind 接口。</para>
+    /// <para>authorize 与 token 交换必须用**同一个** redirect_uri（OIDC 严格校验，Azure AD 等不匹配即拒），
+    /// 故统一从这里取，避免两处拼接分叉。</para>
+    /// </summary>
+    public static string CallbackRedirectUrl(SsoOptions options, string providerId, string mode)
+    {
+        var callback = FrontendCallbackUrl(options) + (mode == "bind" ? "/bind" : string.Empty);
+        return $"{callback}?provider={Uri.EscapeDataString(providerId)}";
+    }
+
+    /// <summary>
     /// 企业授权码换平台登录态。成功返回 <see cref="AuthResult"/>；
     /// 失败返回 null 并给出 <see cref="SsoLoginFailure"/>。
     /// </summary>
     public async Task<(AuthResult? Result, SsoLoginFailure? Failure)> LoginAsync(
-        string providerId, string code, string? ip, CancellationToken ct)
+        string providerId, string code, string state, string? ip, CancellationToken ct)
     {
         var options = await GetEffectiveOptionsAsync(ct);
         var provider = ResolveProvider(providerId, options);
         if (provider is null)
             return (null, SsoLoginFailure.NotLinked);
 
-        var identity = await provider.ExchangeAsync(code, ct);
+        // redirect_uri 必须与 authorize 时完全一致（OIDC 严格校验），统一由 CallbackRedirectUrl 构造
+        var redirectUri = CallbackRedirectUrl(options, providerId, "login");
+        var identity = await provider.ExchangeAsync(new SsoCallback(code, state, redirectUri), ct);
         if (identity is null || string.IsNullOrWhiteSpace(identity.Subject))
             return (null, SsoLoginFailure.InvalidCode);
 
@@ -193,7 +209,8 @@ public class SsoLoginService
         if (!TryConsumeState(state, providerId, out var mode) || mode != "bind")
             return (false, "绑定状态已过期，请重新发起绑定");
 
-        var identity = await provider.ExchangeAsync(code, ct);
+        var redirectUri = CallbackRedirectUrl(options, providerId, "bind");
+        var identity = await provider.ExchangeAsync(new SsoCallback(code, state, redirectUri), ct);
         if (identity is null || string.IsNullOrWhiteSpace(identity.Subject))
             return (false, "授权码无效或已过期，请重新扫码");
 

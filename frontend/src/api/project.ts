@@ -1,5 +1,5 @@
 import request from './request'
-import type { PagedResult, Project, ProjectPayload } from '@/types/project'
+import type { PagedResult, Project, ProjectMember, ProjectPayload, UserCandidate } from '@/types/project'
 import type { BatchDeleteResult } from '@/types/common'
 
 export const getProjects = (params: { search?: string; page?: number; pageSize?: number }) =>
@@ -46,3 +46,22 @@ export const createApiToken = (projectId: string, data: { name: string; expiresI
 
 export const revokeApiToken = (projectId: string, tokenId: string) =>
   request.delete<unknown, void>(`/projects/${projectId}/api-tokens/${tokenId}`)
+
+// ==================== 项目成员（迭代 E·① 项目级授权） ====================
+// 成员激活式：项目加入成员后即"仅成员可见/可操作"；平台管理员不受限。
+export const listProjectMembers = (projectId: string) =>
+  request.get<unknown, ProjectMember[]>(`/projects/${projectId}/members`)
+
+export const searchMemberCandidates = (projectId: string, search?: string) =>
+  request.get<unknown, UserCandidate[]>(`/projects/${projectId}/members/candidates`, {
+    params: { search: search || undefined },
+  })
+
+export const addProjectMember = (projectId: string, data: { userId: string; role: number }) =>
+  request.post<unknown, ProjectMember>(`/projects/${projectId}/members`, data)
+
+export const updateProjectMemberRole = (projectId: string, userId: string, role: number) =>
+  request.put<unknown, void>(`/projects/${projectId}/members/${userId}`, { role })
+
+export const removeProjectMember = (projectId: string, userId: string) =>
+  request.delete<unknown, void>(`/projects/${projectId}/members/${userId}`)

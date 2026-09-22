@@ -49,6 +49,17 @@ public class SystemConfig
     public string SsoDingtalkClientId { get; set; } = string.Empty;
     public string SsoDingtalkClientSecret { get; set; } = string.Empty;
 
+    // 标准 OIDC（Azure AD / Okta / Keycloak / Auth0 / Google ...）：端点走发现文档，只需 Authority + 客户端凭据。
+    public bool SsoOidcEnabled { get; set; }
+    /// <summary>OIDC Issuer（Authority），发现文档取 {Authority}/.well-known/openid-configuration</summary>
+    public string SsoOidcAuthority { get; set; } = string.Empty;
+    public string SsoOidcClientId { get; set; } = string.Empty;
+    public string SsoOidcClientSecret { get; set; } = string.Empty;
+    /// <summary>登录按钮显示名（缺省「单点登录」）</summary>
+    public string SsoOidcDisplayName { get; set; } = string.Empty;
+    /// <summary>请求的 scope（空格分隔），缺省 openid profile email</summary>
+    public string SsoOidcScopes { get; set; } = string.Empty;
+
     // ------------------------------ M8 Agent 自愈闭环（系统级总开关）
     // 与 SSO 同规：系统配置页可改、保存即生效、数据库为权威。默认关。
     // 这是总闸——关闭后所有项目都不跑 Agent Loop（项目级 AgentLoopEnabled 再叠加一层与门）。

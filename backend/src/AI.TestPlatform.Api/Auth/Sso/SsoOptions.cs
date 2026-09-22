@@ -47,4 +47,12 @@ public class SsoProviderConfig
 
     /// <summary>应用 ClientSecret（AppSecret）</summary>
     public string? ClientSecret { get; set; }
+
+    // ---------- 标准 OIDC（Azure AD / Okta / Keycloak / Auth0 / Google ...）----------
+    // 复用上面的 ClientId / ClientSecret：OIDC 的 client_id / client_secret 语义与钉钉一致。
+    /// <summary>OIDC Issuer（Authority）。发现文档取 {Authority}/.well-known/openid-configuration</summary>
+    public string? Authority { get; set; }
+
+    /// <summary>请求的 scope，空格分隔。缺省 <c>openid profile email</c></summary>
+    public string? Scopes { get; set; }
 }

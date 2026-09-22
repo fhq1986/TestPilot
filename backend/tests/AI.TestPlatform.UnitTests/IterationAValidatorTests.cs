@@ -123,6 +123,8 @@ public class NotificationSettingsValidatorTests
             SsoAutoProvision: null, SsoFrontendBaseUrl: null,
             SsoWecomEnabled: null, SsoWecomCorpId: null, SsoWecomAgentId: null, SsoWecomSecret: null,
             SsoDingtalkEnabled: null, SsoDingtalkClientId: null, SsoDingtalkClientSecret: null,
+            SsoOidcEnabled: null, SsoOidcAuthority: null, SsoOidcClientId: null, SsoOidcClientSecret: null,
+            SsoOidcDisplayName: null, SsoOidcScopes: null,
             ClearWebhook: null, AgentLoopEnabled: null);
 
     [Fact]

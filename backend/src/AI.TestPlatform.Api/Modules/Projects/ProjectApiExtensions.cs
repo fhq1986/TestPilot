@@ -6,6 +6,7 @@ using AI.TestPlatform.Application.Common;
 using AI.TestPlatform.Application.Projects;
 using AI.TestPlatform.Application.TestPlans;
 using AI.TestPlatform.Api.TestPlans;
+using AI.TestPlatform.Domain.Auth;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using FluentValidation;
@@ -39,6 +40,7 @@ public static class ProjectApiExtensions
     {
         group.MapGet("/", async (
             TestDbContext db,
+            ICurrentUser user,
             CancellationToken ct,
             [FromQuery] string? search = null,
             [FromQuery] int page = 1,
@@ -48,6 +50,16 @@ public static class ProjectApiExtensions
             pageSize = pageSize is < 1 ? 20 : pageSize > 100 ? 100 : pageSize;
 
             var query = db.Projects.AsNoTracking();
+
+            // 迭代 E·①：非平台管理员只看到「我是成员的项目 ∪ 尚未启用成员管理的项目」。
+            // 后者（无成员）退化为全局可见，保证历史项目与其他人在建项目不受影响。
+            if (user.Role is not (UserRole.SuperAdmin or UserRole.Admin))
+            {
+                var uid = user.Id ?? Guid.Empty;
+                query = query.Where(p =>
+                    db.ProjectMembers.Any(m => m.ProjectId == p.Id && m.UserId == uid) ||
+                    !db.ProjectMembers.Any(m => m.ProjectId == p.Id));
+            }
 
             if (!string.IsNullOrWhiteSpace(search))
                 query = query.Where(p => p.Name.Contains(search) ||
@@ -114,6 +126,18 @@ public static class ProjectApiExtensions
                 CreatedById = http.User.GetUserId(),
             };
             db.Projects.Add(project);
+            // 迭代 E·①：创建者自动成为项目 Owner——项目一旦有成员即进入"仅成员可见/可操作"模式，
+            // 创建者不入列会把自己锁在门外。与项目同一事务写入（同一次 SaveChanges）。
+            if (project.CreatedById != Guid.Empty)
+            {
+                db.ProjectMembers.Add(new ProjectMember
+                {
+                    ProjectId = project.Id,
+                    UserId = project.CreatedById,
+                    Role = ProjectRole.Owner,
+                    CreatedById = project.CreatedById,
+                });
+            }
             // 上面那次查重与这里的写入之间存在竞态窗口：两个请求可以同时查到"名称不存在"。
             // 数据库唯一索引是最终防线，撞上时把 23505 转成与查重一致的 409 + 中文提示，
             // 而不是让用户看到一个"服务器内部错误"。
