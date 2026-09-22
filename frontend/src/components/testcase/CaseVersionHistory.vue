@@ -1,5 +1,5 @@
 <template>
-  <el-drawer :model-value="visible" title="版本历史" size="680px" @update:model-value="emit('update:visible', $event)"
+  <el-drawer :model-value="visible" title="版本历史" size="80%" @update:model-value="emit('update:visible', $event)"
     @open="loadVersions">
     <el-alert type="warning" :closable="false" class="tip">
       <template #title>
@@ -16,12 +16,12 @@
     </div>
     <el-table v-if="!loading && versions.length > 0" v-loading="loading" :data="versions" size="small" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="40" />
-      <el-table-column label="版本" width="76">
+      <el-table-column label="版本" width="70">
         <template #default="{ row }">
           <el-tag size="small" effect="plain">v{{ row.version }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="时间" width="150">
+      <el-table-column label="时间" width="140">
         <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
       </el-table-column>
       <el-table-column label="操作人" width="90" show-overflow-tooltip>

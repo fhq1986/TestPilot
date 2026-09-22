@@ -170,12 +170,16 @@ public static class ExecutionApiExtensions
                 query = query.Where(e => e.TestCase != null && EF.Functions.Like(e.TestCase.Name, $"%{kw}%"));
             }
             if (dateFrom.HasValue)
-                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) >= dateFrom.Value);
+            {
+                // Npgsql timestamptz 只吃 UTC；[FromQuery] 绑 URL "2026-09-22" → Kind=Unspecified → 必须转
+                var fromUtc = DateTimeUtcHelper.SpecifyUtc(dateFrom.Value);
+                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) >= fromUtc);
+            }
             if (dateTo.HasValue)
             {
-                // 用户选 9/21 想包含当天所有执行 → exclusive 下一天零点
-                var toExclusive = dateTo.Value.Date.AddDays(1);
-                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) < toExclusive);
+                // 用户选 9/22 想包含当天所有执行 → exclusive 下一天零点
+                var toExclusiveUtc = DateTimeUtcHelper.SpecifyUtc(dateTo.Value.Date.AddDays(1));
+                query = query.Where(e => (e.StartedAt ?? e.CreatedAt) < toExclusiveUtc);
             }
 
             var total = await query.CountAsync(ct);
@@ -542,6 +546,20 @@ public static class ExecutionApiExtensions
 
         return group;
     }
+}
+
+/// <summary>
+/// Npgsql timestamptz 只接受 DateTime.Kind=Utc。
+/// [FromQuery] 绑定 URL "2026-09-22" 时 Kind=Unspecified → 本辅助做 SpecifyKind(Local) + ToUniversalTime。
+/// </summary>
+internal static class DateTimeUtcHelper
+{
+    public static DateTime SpecifyUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime(),
+    };
 }
 
 /// <summary>

@@ -42,7 +42,7 @@
         <el-input v-model="title" placeholder="标题 / 内容搜索" clearable class="w-160" @keyup.enter="reload"
           @clear="reload" />
         <el-date-picker v-model="dateRange" type="daterange" start-placeholder="开始日期" end-placeholder="结束日期"
-          value-format="YYYY-MM-DD"  @change="reload" />
+          value-format="YYYY-MM-DD"  @change="reload" class="w-240" />
         <el-checkbox v-model="unreadOnly" @change="reload">仅看未读</el-checkbox>
         <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
         <div class="toolbar-spacer" />
@@ -366,10 +366,10 @@ onMounted(async () => {
 
 /* el-date-picker 内部套了一层 el-input，
    在 flex 工具栏里只写 width 会被内部的 width:100% 撑开 → 三重锁死 */
-.w-260 {
-  width: 260px;
-  max-width: 260px;
-  flex: 0 0 260px;
+.w-240 {
+  width: 240px;
+  max-width: 240px;
+  flex: 0 0 240px;
 }
 
 .w-180 {
