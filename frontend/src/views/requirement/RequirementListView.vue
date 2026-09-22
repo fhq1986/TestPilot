@@ -222,20 +222,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="实际开始" label-width="90px">
-              <el-date-picker v-model="form.actualStartDate" type="date" value-format="YYYY-MM-DD"
-                placeholder="可选" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="实际完成" label-width="90px">
-              <el-date-picker v-model="form.actualEndDate" type="date" value-format="YYYY-MM-DD"
-                placeholder="可选" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
            <el-row :gutter="16">
           <el-col :span="12">
         <el-form-item label="状态">
