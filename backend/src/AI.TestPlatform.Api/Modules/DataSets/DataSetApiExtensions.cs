@@ -70,7 +70,7 @@ public static class DataSetApiExtensions
                 creatorNames.GetName(d.CreatedById))).ToList();
 
             return Results.Ok(new PagedResult<DataSetSummaryDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<PagedResult<DataSetSummaryDto>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {
@@ -84,7 +84,7 @@ public static class DataSetApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(ToDto(dataSet, usedBy));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<DataSetDto>();
 
         group.MapPost("/", async (
             CreateDataSetRequest request,
@@ -230,7 +230,7 @@ public static class DataSetApiExtensions
                 testCase.DataSetId, testCase.DataSet?.Name,
                 distinctUsed, columns, missing, unused,
                 testCase.DataSet?.Rows.FirstOrDefault() ?? new Dictionary<string, string>()));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<CaseVariableCheckDto>();
 
         // 用例绑定/解绑数据集
         group.MapPost("/attach/{testCaseId:guid}", async (

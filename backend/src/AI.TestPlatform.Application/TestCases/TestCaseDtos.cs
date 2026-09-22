@@ -153,3 +153,6 @@ public record UpdateTestStepRequest(
 
 /// <summary>手动设置 unstable 标记</summary>
 public record SetFlakeRequest(bool IsFlaky);
+
+/// <summary>模块下拉项（GET /testcases/modules）：模块名 + 该模块下的用例数</summary>
+public record TestCaseModuleStatDto(string Module, int Count);

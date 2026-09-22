@@ -26,7 +26,7 @@ public static class ProjectApiTokenApiExtensions
                     t.Id, t.Name, t.Prefix, t.CreatedAt, t.ExpiresAt, t.RevokedAt, t.LastUsedAt))
                 .ToListAsync(ct);
             return Results.Ok(items);
-        }).WithPermission(Permission.ManageProjects);
+        }).WithPermission(Permission.ManageProjects).Produces<List<ApiTokenDto>>();
 
         // ---- 创建：唯一一次返回明文
         group.MapPost("/{projectId:guid}/api-tokens", async (

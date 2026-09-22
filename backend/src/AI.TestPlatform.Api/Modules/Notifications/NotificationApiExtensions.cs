@@ -108,7 +108,7 @@ public static class NotificationApiExtensions
                     n.ProjectId.HasValue && projectNames.TryGetValue(n.ProjectId.Value, out var pname) ? pname : null));
 
             return Results.Ok(new PagedResult<NotificationDto>(dtos, total, page, pageSize));
-        }).WithPermission(Permission.None).RequireAuthorization();
+        }).WithPermission(Permission.None).Produces<PagedResult<NotificationDto>>().RequireAuthorization();
 
         // 未读数（铃铛角标）。分类维度一并返回，供弹层里的分类页签显示计数
         group.MapGet("/unread-count", async (
@@ -125,7 +125,7 @@ public static class NotificationApiExtensions
 
             return Results.Ok(new NotificationUnreadDto(
                 byCategory.Sum(c => c.Count), byCategory));
-        }).WithPermission(Permission.None).RequireAuthorization();
+        }).WithPermission(Permission.None).Produces<NotificationUnreadDto>().RequireAuthorization();
 
         // 单条已读（superadmin 可操作任意消息）
         group.MapPost("/{id:guid}/read", async (

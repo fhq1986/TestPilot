@@ -69,7 +69,7 @@ public static class TestPlanRoundApiExtensions
                     // 这是刻意的：达标是相对目标的，目标变了历史结论本就该重算
                     plan is null || c.Pending > 0 ? null : stats.PassRate >= plan.TargetPassRate);
             }).ToList());
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<List<PlanRoundSummaryDto>>();
 
         group.MapGet("/rounds/{roundId:guid}", async (Guid roundId,
             TestDbContext db, TestPlanService plans, CancellationToken ct) =>
@@ -115,7 +115,7 @@ public static class TestPlanRoundApiExtensions
         {
             var result = await plans.BuildGateAsync(id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<PlanGateResult>();
 
         group.MapGet("/{id:guid}/report", async (Guid id, TestDbContext db, TestPlanService plans,
             CancellationToken ct) =>
@@ -191,7 +191,7 @@ public static class TestPlanRoundApiExtensions
                 plan.LastError, plan.CreatedAt, plan.UpdatedAt);
 
             return Results.Ok(new TestPlanReportDto(summary, gate, trends, modules, gate.BlockingCases));
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<TestPlanReportDto>();
 
         // 导出 xlsx：验收材料要有能带走的文件
         group.MapGet("/{id:guid}/export", async (Guid id, TestPlanReportService reports,

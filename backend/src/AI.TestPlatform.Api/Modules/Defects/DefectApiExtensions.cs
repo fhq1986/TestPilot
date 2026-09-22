@@ -34,7 +34,7 @@ public static class DefectApiExtensions
             [FromQuery] int pageSize = 20) =>
             Results.Ok(await defects.ListAsync(projectId, status, severity, assignedToId,
                 executionId, testCaseId, search, page, pageSize, ct)))
-            .WithPermission(Permission.ViewTestCases);
+            .WithPermission(Permission.ViewTestCases).Produces<PagedResult<DefectListItemDto>>();
 
         // 仪表盘统计卡 + 趋势
         group.MapGet("/stats", async (
@@ -42,14 +42,14 @@ public static class DefectApiExtensions
             CancellationToken ct,
             [FromQuery] Guid? projectId = null) =>
             Results.Ok(await defects.StatsAsync(projectId, ct)))
-            .WithPermission(Permission.ViewTestCases);
+            .WithPermission(Permission.ViewTestCases).Produces<DefectStatsDto>();
 
         group.MapGet("/{id:guid}", async (
             Guid id, DefectService defects, CancellationToken ct) =>
         {
             var defect = await defects.GetAsync(id, ct);
             return defect is null ? Results.NotFound() : Results.Ok(defect);
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<DefectDetailDto>();
 
         // 创建。FoundInExecutionId 提供时即「一键转缺陷」：服务端快照错误/诊断/截图等证据。
         group.MapPost("/", async (
@@ -175,7 +175,7 @@ public static class DefectApiExtensions
         // 已启用的外部缺陷系统（前端推送入口与跳转链接构造用）。查看权限即可读取。
         group.MapGet("/external-providers", (ExternalDefectPusher pusher) =>
             Results.Ok(pusher.EnabledProviders()))
-            .WithPermission(Permission.ViewTestCases);
+            .WithPermission(Permission.ViewTestCases).Produces<IReadOnlyList<ExternalProviderInfo>>();
 
         // 推送缺陷到外部系统（单向创建 + 记录 ExternalRef）。重复推送会被拒绝。
         group.MapPost("/{id:guid}/push-external", async (

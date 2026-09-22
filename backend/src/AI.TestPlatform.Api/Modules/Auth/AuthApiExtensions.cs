@@ -39,7 +39,7 @@ public static class AuthApiExtensions
                     p!.Id, p.DisplayName, $"/api/auth/sso/{p.Id}/authorize"))
                 .ToList();
             return Results.Ok(providers);
-        });
+        }).Produces<List<SsoProviderInfo>>();
 
         // 跳转到企业授权页（服务端生成 state 存缓存，回调必须原样带回）。
         // mode=bind 时回调到前端 /login/sso/bind，完成「已登录用户绑定企业身份」流程。
@@ -115,7 +115,7 @@ public static class AuthApiExtensions
                 PermissionCatalog.DisplayName(role),
                 (int)permissions,
                 PermissionCatalog.ExpandNames(permissions)));
-        }).RequireAuthorization();
+        }).RequireAuthorization().Produces<UserDto>();
 
         return group;
     }

@@ -78,7 +78,7 @@ public static class ProjectApiExtensions
             var withNames = items.Select(p => p with { CreatedByName = names.GetName(p.CreatedById) }).ToList();
 
             return Results.Ok(new PagedResult<ProjectDto>(withNames, total, page, pageSize));
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<PagedResult<ProjectDto>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {
@@ -90,7 +90,7 @@ public static class ProjectApiExtensions
 
             var names = await UserNameResolver.ResolveAsync(db, new Guid?[] { project.CreatedById }, ct);
             return Results.Ok(project with { CreatedByName = names.GetName(project.CreatedById) });
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<ProjectDto>();
 
         group.MapPost("/", async (
             CreateProjectRequest request,

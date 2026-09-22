@@ -1,8 +1,12 @@
-name: 前后端契约漂移校验
+name: 前后端契约校验
 
-# 迭代 E·⑤：后端 DTO 改了但前端手写类型没跟上，过去只能等线上报错才发现。
-# 这里起一个真实后端（Development 才有 Swagger）拉取 swagger.json，
-# 用 scripts/gen-api-types.mjs 重新生成类型并与仓库里已提交的基线逐字节比对。
+# 迭代 E·⑤ + F·②：两个方向都校验，因为它们发现的是不同的问题。
+#   ① 类型漂移：后端 DTO 改了但前端手写类型没跟上，过去只能等线上报错才发现。
+#      做法：起一个真实后端（Development 才有 Swagger）拉 swagger.json，
+#      用 scripts/gen-api-types.mjs 重新生成类型并与仓库里已提交的基线逐字节比对。
+#   ② 响应结构：后端**实际返回的 JSON** 是否符合它在 Swagger 里声明的 schema。
+#      做法：登录后逐个调用只读端点，用 ajv 按 schema 校验响应体。
+#      这一层能发现「DTO 加了字段却漏了 .Produces<T>()」这类声明与实现分叉。
 on:
   push:
     branches: [main, master]
@@ -10,6 +14,7 @@ on:
       - 'backend/**'
       - 'frontend/src/types/**'
       - 'frontend/scripts/gen-api-types.mjs'
+      - 'frontend/scripts/validate-api-responses.mjs'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
       - '.github/workflows/contract-drift.yml'
@@ -18,6 +23,7 @@ on:
       - 'backend/**'
       - 'frontend/src/types/**'
       - 'frontend/scripts/gen-api-types.mjs'
+      - 'frontend/scripts/validate-api-responses.mjs'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
       - '.github/workflows/contract-drift.yml'
@@ -88,6 +94,10 @@ jobs:
       - name: 校验契约漂移
         working-directory: frontend
         run: npm run api:types:check
+
+      - name: 校验响应结构
+        working-directory: frontend
+        run: npm run api:responses:check
 
       - name: 后端启动日志（失败时定位用）
         if: failure()

@@ -30,7 +30,7 @@ public static class EnvironmentApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(environments.Select(EnvironmentDtos.ToView).ToList());
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<List<EnvironmentView>>();
 
         group.MapPost("/", async (
             Guid projectId,

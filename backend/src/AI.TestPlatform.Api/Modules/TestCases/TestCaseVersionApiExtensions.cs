@@ -23,7 +23,7 @@ public static class TestCaseVersionApiExtensions
             var rows = await versions.ListAsync(id, ct);
             return Results.Ok(rows.Select(v => new TestCaseVersionSummaryDto(
                 v.Version, v.CreatedAt, v.OperatorName, v.ChangeSummary, v.StepCount)).ToList());
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<List<TestCaseVersionSummaryDto>>();
 
         // 单版本快照。返回完整内容，前端的"与当前对比"直接拿它跟当前内容比，
         // 不另做 diff 接口——快照本身就不大，多一个接口只会多一套口径
@@ -39,7 +39,7 @@ public static class TestCaseVersionApiExtensions
 
             return Results.Ok(new TestCaseVersionDetailDto(
                 row.Version, row.CreatedAt, row.OperatorName, row.ChangeSummary, snapshot));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<TestCaseVersionDetailDto>();
 
         // 回滚。回滚前会先记录当前内容，所以历史只追加、回滚本身也能被回滚
         group.MapPost("/{id:guid}/versions/{version:int}/restore", async (

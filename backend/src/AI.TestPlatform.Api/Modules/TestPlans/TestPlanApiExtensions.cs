@@ -99,7 +99,7 @@ public static class TestPlanApiExtensions
             }).ToList();
 
             return Results.Ok(new PagedResult<TestPlanSummaryDto>(dtos, total, page, pageSize));
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<PagedResult<TestPlanSummaryDto>>();
 
         // 顶栏计数
         group.MapGet("/summary", async (
@@ -122,7 +122,7 @@ public static class TestPlanApiExtensions
             if (projectId is not null) query = query.Where(p => p.ProjectId == projectId);
             return Results.Ok(await query.Select(p => p.ReleaseName!).Distinct()
                 .OrderByDescending(r => r).Take(50).ToListAsync(ct));
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<List<string>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, TestPlanService plans,
             CancellationToken ct) =>
@@ -154,7 +154,7 @@ public static class TestPlanApiExtensions
                 plan.Items.Count, roundCount, schedules, issues,
                 plan.CreatedAt, plan.UpdatedAt,
                 plan.RequirementId, plan.Requirement?.Title));
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<TestPlanDetailDto>();
 
         // ---------------------------------------------------------------- CRUD
 
@@ -402,7 +402,7 @@ public static class TestPlanApiExtensions
             return Results.Ok(items.Select(i => new TestPlanItemDto(
                 i.TestCaseId, i.Name, i.Module, i.Priority, i.Type, i.Status, i.IsFlaky,
                 i.Order, i.Deleted)).ToList());
-        }).WithPermission(Permission.ViewTestPlans);
+        }).WithPermission(Permission.ViewTestPlans).Produces<List<TestPlanItemDto>>();
 
         group.MapPost("/{id:guid}/items/from-suite", async (Guid id, ImportPlanItemsRequest request,
             TestDbContext db, CancellationToken ct) =>
@@ -461,7 +461,7 @@ public static class TestPlanApiExtensions
         group.MapGet("/{id:guid}/items/validate", async (Guid id, TestPlanService plans,
             CancellationToken ct) =>
             Results.Ok(await plans.ValidateScopeAsync(id, ct)))
-            .WithPermission(Permission.ViewTestPlans);
+            .WithPermission(Permission.ViewTestPlans).Produces<List<PlanScopeIssueDto>>();
 
         // 轮次 / 达标判定 / 报告（同一路由分组下的另一组端点）
         group.MapTestPlanRoundApi();

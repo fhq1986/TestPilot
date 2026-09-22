@@ -1,6 +1,7 @@
 using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Execution;
+using AI.TestPlatform.Application.Nodes;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
@@ -8,19 +9,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace AI.TestPlatform.Api.Modules.Nodes;
-
-/// <summary>执行节点看板行</summary>
-public sealed record NodeView(
-    Guid Id,
-    string Name,
-    string MachineName,
-    string InstanceId,
-    string Version,
-    int MaxConcurrency,
-    int RunningCount,
-    bool Online,
-    string? LastHeartbeatAt,
-    string StartedAt);
 
 public static class NodeApiExtensions
 {
@@ -56,7 +44,8 @@ public static class NodeApiExtensions
                 .GroupBy(c => c.Split(':')[0])
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            var view = nodes.Select(n => new NodeView(
+            // 今日跑量按节点名补上（ClaimedBy 前缀 = 节点名）
+            var view = nodes.Select(n => new NodeViewDto(
                 n.Id,
                 n.Name,
                 n.MachineName,
@@ -66,33 +55,14 @@ public static class NodeApiExtensions
                 n.RunningCount,
                 Online: now - n.LastHeartbeatAt < offlineAfter,
                 n.LastHeartbeatAt.ToString("o"),
-                n.StartedAt.ToString("o"))).ToList();
+                n.StartedAt.ToString("o"),
+                TodayCompleted: doneMap.TryGetValue(n.Name, out var c) ? c : 0)).ToList();
 
-            // 今日跑量按节点名补上（ClaimedBy 前缀 = 节点名）
-            var result = view
-                .Select(v => new
-                {
-                    v.Id,
-                    v.Name,
-                    v.MachineName,
-                    v.InstanceId,
-                    v.Version,
-                    v.MaxConcurrency,
-                    v.RunningCount,
-                    v.Online,
-                    v.LastHeartbeatAt,
-                    v.StartedAt,
-                    TodayCompleted = doneMap.TryGetValue(v.Name, out var c) ? c : 0,
-                })
-                .ToList();
-
-            return Results.Ok(new
-            {
-                nodes = result,
-                onlineCount = result.Count(n => n.Online),
-                offlineCount = result.Count(n => !n.Online),
-            });
-        }).WithPermission(Permission.ViewExecutions);
+            return Results.Ok(new NodeListResponseDto(
+                view,
+                view.Count(n => n.Online),
+                view.Count(n => !n.Online)));
+        }).WithPermission(Permission.ViewExecutions).Produces<NodeListResponseDto>();
 
         // 移除一个离线节点的登记（重启/换名后留下的废行；在线节点拒绝删除）
         group.MapDelete("/{name}", async (

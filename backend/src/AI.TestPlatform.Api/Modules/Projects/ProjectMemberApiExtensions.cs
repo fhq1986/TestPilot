@@ -35,7 +35,7 @@ public static class ProjectMemberApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(members);
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<List<ProjectMemberDto>>();
 
         // 成员候选：供加成员时搜人（只暴露 id/用户名/显示名，不暴露用户管理全量）
         group.MapGet("/{projectId:guid}/members/candidates", async (
@@ -54,7 +54,7 @@ public static class ProjectMemberApiExtensions
                 .Select(u => new UserCandidateDto(u.Id, u.Username, u.DisplayName))
                 .ToListAsync(ct);
             return Results.Ok(items);
-        }).WithPermission(Permission.ManageProjects).WithProjectRole(ProjectRole.Owner);
+        }).WithPermission(Permission.ManageProjects).Produces<List<UserCandidateDto>>().WithProjectRole(ProjectRole.Owner);
 
         // 加成员
         group.MapPost("/{projectId:guid}/members", async (

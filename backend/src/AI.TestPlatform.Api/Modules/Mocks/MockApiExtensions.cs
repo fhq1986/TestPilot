@@ -53,7 +53,7 @@ public static class MockApiExtensions
                 query = query.Where(m => m.ProjectId == projectId.Value);
             var items = await query.OrderByDescending(m => m.CreatedAt).ToListAsync(ct);
             return Results.Ok(items.Select(m => ToDto(m, mockService)));
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<IEnumerable<MockDto>>();
 
         group.MapGet("/{id:guid}", async (
             Guid id,

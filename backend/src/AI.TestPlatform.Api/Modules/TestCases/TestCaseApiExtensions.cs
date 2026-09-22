@@ -91,7 +91,7 @@ public static class TestCaseApiExtensions
             }).ToList();
 
             return Results.Ok(new PagedResult<TestCaseSummaryDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<PagedResult<TestCaseSummaryDto>>();
 
         // 模块列表：供列表页筛选下拉使用
         group.MapGet("/modules", async (
@@ -104,14 +104,20 @@ public static class TestCaseApiExtensions
             if (projectId.HasValue)
                 query = query.Where(t => t.ProjectId == projectId.Value);
 
+            // 先投影成匿名类型让 EF 翻译成 SQL，再在内存里转 DTO。
+            // 直接 `Select(g => new TestCaseModuleStatDto(g.Key, g.Count()))` 会因位置参数
+            // 构造被 EF 判为不可翻译（GroupBy 后的 g.Count() 走 AsQueryable 包装）。
             var modules = await query
                 .GroupBy(t => t.Module!)
                 .Select(g => new { Module = g.Key, Count = g.Count() })
                 .OrderBy(m => m.Module)
                 .ToListAsync(ct);
+            var moduleStats = modules
+                .Select(m => new TestCaseModuleStatDto(m.Module, m.Count))
+                .ToList();
 
-            return Results.Ok(modules);
-        }).WithPermission(Permission.ViewTestCases);
+            return Results.Ok(moduleStats);
+        }).WithPermission(Permission.ViewTestCases).Produces<List<TestCaseModuleStatDto>>();
 
         // 下载导入模板（填写说明 + 示例模块）
         group.MapGet("/import-template", () =>
@@ -201,7 +207,7 @@ public static class TestCaseApiExtensions
                 .FirstOrDefaultAsync(e => e.Id == id, ct);
 
             return testCase is null ? Results.NotFound() : Results.Ok(testCase.ToDto());
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<TestCaseDto>();
 
         group.MapPost("/", async (
             CreateTestCaseRequest request,

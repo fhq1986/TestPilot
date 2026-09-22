@@ -42,7 +42,7 @@ public static class CustomFieldApiExtensions
                 .Select(f => new CustomFieldDto(f.Id, f.Name, f.FieldType, f.Options, f.CreatedAt))
                 .ToListAsync(ct);
             return Results.Ok(items);
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<List<CustomFieldDto>>();
 
         group.MapPost("/{projectId:guid}/custom-fields", async (
             Guid projectId, CreateCustomFieldRequest request,

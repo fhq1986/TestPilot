@@ -170,7 +170,7 @@ public static class StatsApiExtensions
                     runningCount, flakyCount, totalPlans, activePlans, durationP95, durationAvg,
                     openDefects, openCriticalDefects, newDefects7d, closedDefects7d),
                 trend, unstableTop, activePlanGating, scheduleHealth));
-        }).WithPermission(Permission.ViewProjects);
+        }).WithPermission(Permission.ViewProjects).Produces<DashboardResponse>();
 
         return group;
     }

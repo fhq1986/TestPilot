@@ -74,7 +74,7 @@ public static class ShareApiExtensions
             var rows = await query.OrderByDescending(s => s.CreatedAt).Take(200).ToListAsync(ct);
             var baseUrl = FrontendBase(configuration);
             return Results.Ok(rows.Select(s => ToDto(s, baseUrl)).ToList());
-        }).WithPermission(Permission.ViewReports);
+        }).WithPermission(Permission.ViewReports).Produces<List<ShareDto>>();
 
         group.MapDelete("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {

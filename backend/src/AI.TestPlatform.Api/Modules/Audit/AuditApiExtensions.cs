@@ -43,7 +43,7 @@ public static class AuditApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(new AuditLogPageDto(total, current, size, items));
-        }).WithPermission(Permission.ViewAuditLog);
+        }).WithPermission(Permission.ViewAuditLog).Produces<AuditLogPageDto>();
 
         // 导出为 xlsx：遵循当前筛选条件（合规评审需要把记录带走，翻页看是不够的）
         group.MapGet("/export", async (

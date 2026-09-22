@@ -40,7 +40,7 @@ public static class UserApiExtensions
             CancellationToken ct,
             [FromQuery] string? search = null) =>
             Results.Ok(await users.ListOptionsAsync(search, ct)))
-            .WithPermission(Permission.ManageProjects);
+            .WithPermission(Permission.ManageProjects).Produces<IReadOnlyList<UserOptionDto>>();
 
         group.MapGet("/{id:guid}", async (Guid id, UserService users, CancellationToken ct) =>
         {
@@ -181,12 +181,12 @@ public static class UserApiExtensions
             var me = await users.GetAsync(current.Id.Value, ct);
             return me is null
                 ? Results.Unauthorized()
-                : Results.Ok(new { ssoProvider = me.SsoProvider });
-        }).RequireAuthorization();
+                : Results.Ok(new MySsoBindingDto(me.SsoProvider));
+        }).RequireAuthorization().Produces<MySsoBindingDto>();
 
         // 角色与权限矩阵（供前端展示「三种角色分别能做什么」）
         group.MapGet("/roles", () => Results.Ok(BuildRoleMatrix()))
-            .WithPermission(Permission.ManageUsers);
+            .WithPermission(Permission.ManageUsers).Produces<IReadOnlyList<RoleMatrixDto>>();
 
         return group;
     }

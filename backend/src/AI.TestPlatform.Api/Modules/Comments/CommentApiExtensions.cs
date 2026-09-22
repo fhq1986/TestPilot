@@ -30,7 +30,7 @@ public static class CommentApiExtensions
                 .Select(c => new CommentDto(c.Id, c.Author.DisplayName, c.Body, c.CreatedAt))
                 .ToListAsync(ct);
             return Results.Ok(items);
-        }).RequireAuthorization();
+        }).RequireAuthorization().Produces<List<CommentDto>>();
 
         group.MapPost("/", async (
             CreateCommentRequest request,

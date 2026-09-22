@@ -1,6 +1,7 @@
 using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Application.Common;
+using AI.TestPlatform.Application.SharedSteps;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using AI.TestPlatform.Api.Common;
@@ -70,7 +71,7 @@ public static class SharedStepApiExtensions
                 creatorNames.GetName(g.CreatedById))).ToList();
 
             return Results.Ok(new PagedResult<SharedStepGroupView>(items, total, p, ps));
-        }).WithPermission(Permission.ManageSharedSteps);
+        }).WithPermission(Permission.ManageSharedSteps).Produces<PagedResult<SharedStepGroupView>>();
 
         // 供「插入共享步骤」下拉用：只回 id/名称/步骤数，一次拿全（组数量天然有限）
         group.MapGet("/options", async (Guid? projectId, TestDbContext db, CancellationToken ct) =>
@@ -81,7 +82,7 @@ public static class SharedStepApiExtensions
                 .OrderBy(g => g.Name)
                 .Select(g => new SharedStepOption(g.Id, g.Name, g.Items.Count))
                 .ToListAsync(ct));
-        }).WithPermission(Permission.ManageSharedSteps);
+        }).WithPermission(Permission.ManageSharedSteps).Produces<List<SharedStepOption>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {
@@ -89,7 +90,7 @@ public static class SharedStepApiExtensions
                 .Include(g => g.Items)
                 .FirstOrDefaultAsync(g => g.Id == id, ct);
             return group is null ? Results.NotFound() : Results.Ok(ToDetail(group));
-        }).WithPermission(Permission.ManageSharedSteps);
+        }).WithPermission(Permission.ManageSharedSteps).Produces<SharedStepGroupDetail>();
 
         // 引用该组的用例清单：删除前给用户看清楚影响面
         group.MapGet("/{id:guid}/usages", async (Guid id, TestDbContext db, CancellationToken ct) =>
@@ -102,10 +103,10 @@ public static class SharedStepApiExtensions
 
             var cases = usages
                 .GroupBy(u => new { u.TestCaseId, u.Name })
-                .Select(g => new { testCaseId = g.Key.TestCaseId, name = g.Key.Name, stepOrders = g.Select(x => x.StepOrder).ToList() })
+                .Select(g => new SharedStepUsageDto(g.Key.TestCaseId, g.Key.Name, g.Select(x => x.StepOrder).ToList()))
                 .ToList();
             return Results.Ok(cases);
-        }).WithPermission(Permission.ManageSharedSteps);
+        }).WithPermission(Permission.ManageSharedSteps).Produces<List<SharedStepUsageDto>>();
 
         group.MapPost("/", async (SharedStepGroupRequest request, TestDbContext db,
             ICurrentUser current, CancellationToken ct) =>

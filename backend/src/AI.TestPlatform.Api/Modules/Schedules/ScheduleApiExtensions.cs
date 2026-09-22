@@ -102,7 +102,7 @@ public static class ScheduleApiExtensions
             }
 
             return Results.Ok(new PagedResult<ScheduleSummaryDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ManageSchedules);
+        }).WithPermission(Permission.ManageSchedules).Produces<PagedResult<ScheduleSummaryDto>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {
@@ -116,7 +116,7 @@ public static class ScheduleApiExtensions
                 s.Module, s.Priority, s.TestCaseIds ?? new List<Guid>(), s.EnvironmentId,
                 s.LastRunAt, s.NextRunAt, s.LastCreatedCount, s.LastError,
                 CronUtils.Describe(s.CronExpression), s.CreatedAt, s.UpdatedAt));
-        }).WithPermission(Permission.ManageSchedules);
+        }).WithPermission(Permission.ManageSchedules).Produces<ScheduleDetailDto>();
 
         group.MapPost("/", async (
             CreateScheduleRequest request,

@@ -2,6 +2,7 @@ using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Recorder;
 using AI.TestPlatform.Application.Executions;
+using AI.TestPlatform.Application.Recorder;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -17,20 +18,20 @@ public static class RecorderApiExtensions
         group.MapGet("/capabilities", () =>
         {
             var (ok, reason) = RecorderService.CheckAvailability();
-            return Results.Ok(new { available = ok, reason, browsers = BrowserCatalog.All });
-        }).WithPermission(Permission.ManageTestCases);
+            return Results.Ok(new RecorderCapabilitiesDto(ok, reason, BrowserCatalog.All));
+        }).WithPermission(Permission.ManageTestCases).Produces<RecorderCapabilitiesDto>();
 
         group.MapGet("/sessions", async (
             Guid? projectId, RecorderService recorder, CancellationToken ct) =>
             Results.Ok(await recorder.ListAsync(projectId, ct)))
-            .WithPermission(Permission.ManageTestCases);
+            .WithPermission(Permission.ManageTestCases).Produces<List<RecorderSession>>();
 
         group.MapGet("/sessions/{id:guid}", async (
             Guid id, RecorderService recorder, CancellationToken ct) =>
         {
             try { return Results.Ok(await recorder.GetAsync(id, ct)); }
             catch (RecorderNotFoundException) { return Results.NotFound(); }
-        }).WithPermission(Permission.ManageTestCases);
+        }).WithPermission(Permission.ManageTestCases).Produces<RecorderSession>();
 
         // 创建并拉起浏览器
         group.MapPost("/sessions", async (
@@ -66,7 +67,7 @@ public static class RecorderApiExtensions
         {
             try { return Results.Ok(await recorder.SnapshotAsync(id, ct)); }
             catch (RecorderNotFoundException) { return Results.NotFound(); }
-        }).WithPermission(Permission.ManageTestCases);
+        }).WithPermission(Permission.ManageTestCases).Produces<RecorderSnapshot>();
 
         group.MapPost("/sessions/{id:guid}/stop", async (
             Guid id, RecorderService recorder, CancellationToken ct) =>

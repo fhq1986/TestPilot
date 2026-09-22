@@ -56,13 +56,13 @@ public static class SuiteApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<SuiteSummaryDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<PagedResult<SuiteSummaryDto>>();
 
         group.MapGet("/{id:guid}", async (Guid id, TestDbContext db, CancellationToken ct) =>
         {
             var detail = await LoadDetailAsync(db, id, ct);
             return detail is null ? Results.NotFound() : Results.Ok(detail);
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<SuiteDetailDto>();
 
         group.MapPost("/", async (
             CreateSuiteRequest request,
@@ -192,7 +192,7 @@ public static class SuiteApiExtensions
         {
             take = take is < 1 ? 20 : take > 100 ? 100 : take;
             return Results.Ok(await runner.HistoryAsync(id, take, ct));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<List<SuiteRunSummaryDto>>();
 
         // 全量替换套件成员（界面拖拽排序后一次性保存，含每条用例的前置依赖）
         group.MapPut("/{id:guid}/cases", async (

@@ -102,7 +102,7 @@ public static class ScriptApiExtensions
 
             var script = PlaywrightScriptExporter.Export(testCase, testCase.Steps);
             return Results.Ok(new ScriptExportDto(testCase.Id, testCase.Name, "typescript", script));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<ScriptExportDto>();
 
         return group;
     }

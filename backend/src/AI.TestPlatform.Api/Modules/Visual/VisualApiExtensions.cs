@@ -56,7 +56,7 @@ public static class VisualApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<VisualBaselineDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<PagedResult<VisualBaselineDto>>();
 
         // 接受变化：把某次执行的步骤截图设为新基线（确认差异无误后的一键操作）
         group.MapPost("/baselines/accept", async (
@@ -104,7 +104,7 @@ public static class VisualApiExtensions
 
             return Results.Ok(new VisualCaseSettingDto(
                 testCase.Id, testCase.Name, testCase.VisualEnabled, testCase.VisualThreshold, baselineCount));
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<VisualCaseSettingDto>();
 
         return group;
     }

@@ -20,7 +20,7 @@ public static class SettingsApiExtensions
         {
             var config = await settings.GetAsync(ct);
             return Results.Ok(settings.ToView(config));
-        }).WithPermission(Permission.ManageSettings);
+        }).WithPermission(Permission.ManageSettings).Produces<SettingsView>();
 
         group.MapPut("/", async (
             UpdateSettingsRequest request,
@@ -38,7 +38,7 @@ public static class SettingsApiExtensions
 
         // AI 提供商预设（Base URL + 常用模型），供前端联动选择
         group.MapGet("/ai-providers", () => Results.Ok(AIProviderCatalog.Providers))
-            .WithPermission(Permission.ManageSettings);
+            .WithPermission(Permission.ManageSettings).Produces<IReadOnlyList<AIProviderPreset>>();
 
         group.MapPost("/ai/test", async (
             AIClient aiClient,

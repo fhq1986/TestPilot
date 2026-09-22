@@ -15,3 +15,6 @@ public record UserDto(
     IReadOnlyList<string> PermissionNames);
 
 public record AuthResult(string Token, UserDto User);
+
+/// <summary>本人 SSO 绑定状态（GET /users/me/sso）。null 表示仅密码登录</summary>
+public record MySsoBindingDto(string? SsoProvider);

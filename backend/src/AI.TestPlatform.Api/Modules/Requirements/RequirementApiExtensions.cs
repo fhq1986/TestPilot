@@ -29,7 +29,7 @@ public static class RequirementApiExtensions
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20) =>
             Results.Ok(await requirements.ListAsync(projectId, search, status, page, pageSize, ct)))
-            .WithPermission(Permission.ViewTestCases);
+            .WithPermission(Permission.ViewTestCases).Produces<PagedResult<RequirementListItemDto>>();
 
         // 项目覆盖统计卡：覆盖率 + 未覆盖缺口清单
         group.MapGet("/coverage", async (
@@ -37,14 +37,14 @@ public static class RequirementApiExtensions
             CancellationToken ct,
             [FromQuery] Guid? projectId = null) =>
             Results.Ok(await requirements.CoverageAsync(projectId, ct)))
-            .WithPermission(Permission.ViewTestCases);
+            .WithPermission(Permission.ViewTestCases).Produces<RequirementCoverageDto>();
 
         group.MapGet("/{id:guid}", async (
             Guid id, RequirementService requirements, CancellationToken ct) =>
         {
             var requirement = await requirements.GetAsync(id, ct);
             return requirement is null ? Results.NotFound() : Results.Ok(requirement);
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<RequirementListItemDto>();
 
         // 查看某个需求关联的所有测试计划（需求列表页"关联计划"列点击展开用）
         group.MapGet("/{id:guid}/plans", async (
@@ -68,7 +68,7 @@ public static class RequirementApiExtensions
                 LastRoundAt: p.LastRoundAt)).ToList();
 
             return Results.Ok(dtos);
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<List<RequirementPlanRefDto>>();
 
         group.MapPost("/", async (
             CreateRequirementRequest request,

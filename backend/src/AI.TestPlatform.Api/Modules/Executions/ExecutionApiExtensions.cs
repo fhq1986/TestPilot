@@ -238,7 +238,7 @@ public static class ExecutionApiExtensions
                 .ToListAsync(ct);
 
             return Results.Ok(new PagedResult<ExecutionSummaryDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewExecutions);
+        }).WithPermission(Permission.ViewExecutions).Produces<PagedResult<ExecutionSummaryDto>>();
 
         // 批量删除执行记录（连带步骤结果与截图）；进行中的执行会被跳过
         group.MapPost("/batch-delete", async (
@@ -303,7 +303,7 @@ public static class ExecutionApiExtensions
             return execution is null
                 ? Results.NotFound()
                 : Results.Ok(execution.ToDetailDto(execution.TestCase?.Name ?? "(用例已删除)"));
-        }).WithPermission(Permission.ViewExecutions);
+        }).WithPermission(Permission.ViewExecutions).Produces<ExecutionDetailDto>();
 
         // M8 Agent 修复轨迹：执行详情页「Agent 修复轨迹」区展示每次尝试的归因 / 动作 / 结果。
         // 无自愈记录时返回空数组（前端不渲染该区）。
@@ -314,7 +314,7 @@ public static class ExecutionApiExtensions
                 .OrderBy(a => a.AttemptNumber)
                 .ToListAsync(ct);
             return Results.Ok(attempts.Select(a => a.ToDto()).ToList());
-        }).WithPermission(Permission.ViewExecutions);
+        }).WithPermission(Permission.ViewExecutions).Produces<List<AgentAttemptDto>>();
 
         // M8 Agent 审批：采纳一次「需人工审批」的修复。
         // 采纳 = 把修复应用到**真实 TestStep**（与执行期只改副本相反）并持久化；破坏性/未实现的动作会被 FixActionApplier 拒绝。
@@ -429,7 +429,7 @@ public static class ExecutionApiExtensions
                     a.Approved, a.ApprovedBy, a.ApprovedAt, (int)a.Result, a.CreatedAt))
                 .ToListAsync(ct);
             return Results.Ok(new PagedResult<AgentApprovalItemDto>(items, total, page, pageSize));
-        }).WithPermission(Permission.ViewExecutions);
+        }).WithPermission(Permission.ViewExecutions).Produces<PagedResult<AgentApprovalItemDto>>();
 
         // M8 自愈度量（迭代 D2）：时间窗口内自愈尝试的聚合指标 + 误判检测，供管理看板消费。
         group.MapGet("/agent-heal-metrics", async (TestDbContext db, CancellationToken ct,
@@ -437,7 +437,7 @@ public static class ExecutionApiExtensions
         {
             var metrics = await AgentHealMetrics.ComputeAsync(db, from, to, ct);
             return Results.Ok(metrics);
-        }).WithPermission(Permission.ViewExecutions);
+        }).WithPermission(Permission.ViewExecutions).Produces<AgentHealMetricsDto>();
 
         // 该执行里「已经转成缺陷」的步骤：执行详情页的「缺陷」列据此避免重复转单。
         // 两条路径都要覆盖——「创建新缺陷」写的是 Defect.FoundInExecutionId/FoundInStepOrder，
@@ -464,7 +464,7 @@ public static class ExecutionApiExtensions
                 .ToList();
 
             return Results.Ok(merged);
-        }).WithPermission(Permission.ViewTestCases);
+        }).WithPermission(Permission.ViewTestCases).Produces<List<ExecutionDefectLinkDto>>();
 
         // trace 下载（安全审查 S1）：原 /traces 静态目录注册在鉴权之前、完全绕过授权，
         // 而 trace 内含完整 DOM 快照与网络请求头。改为受权端点，与执行详情同一权限门槛。
