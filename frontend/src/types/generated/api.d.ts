@@ -237,7 +237,7 @@ export interface paths {
             parameters: {
                 query?: {
                     search?: string;
-                    role?: components["schemas"]["UserRole"];
+                    role?: components["schemas"]["UserRoleNullable"];
                     page?: number;
                     pageSize?: number;
                 };
@@ -1287,7 +1287,7 @@ export interface paths {
             parameters: {
                 query?: {
                     projectId?: string;
-                    status?: components["schemas"]["TestPlanStatus"];
+                    status?: components["schemas"]["TestPlanStatusNullable"];
                     ownerId?: string;
                     releaseName?: string;
                     search?: string;
@@ -2498,7 +2498,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    target?: string;
+                    target?: components["schemas"]["CommentTargetNullable"];
                     targetId?: string;
                 };
                 header?: never;
@@ -2593,7 +2593,7 @@ export interface paths {
             parameters: {
                 query?: {
                     unreadOnly?: boolean;
-                    category?: components["schemas"]["NotificationCategory"];
+                    category?: components["schemas"]["NotificationCategoryNullable"];
                     projectId?: string;
                     title?: string;
                     dateFrom?: string;
@@ -2708,7 +2708,7 @@ export interface paths {
         post: {
             parameters: {
                 query?: {
-                    category?: components["schemas"]["NotificationCategory"];
+                    category?: components["schemas"]["NotificationCategoryNullable"];
                 };
                 header?: never;
                 path?: never;
@@ -2777,8 +2777,8 @@ export interface paths {
             parameters: {
                 query?: {
                     projectId?: string;
-                    status?: components["schemas"]["DefectStatus"];
-                    severity?: components["schemas"]["DefectSeverity"];
+                    status?: components["schemas"]["DefectStatusNullable"];
+                    severity?: components["schemas"]["DefectSeverityNullable"];
                     assignedToId?: string;
                     executionId?: string;
                     testCaseId?: string;
@@ -3224,7 +3224,7 @@ export interface paths {
                 query?: {
                     projectId?: string;
                     search?: string;
-                    status?: components["schemas"]["RequirementStatus"];
+                    status?: components["schemas"]["RequirementStatusNullable"];
                     page?: number;
                     pageSize?: number;
                 };
@@ -3515,12 +3515,12 @@ export interface paths {
             parameters: {
                 query?: {
                     projectId?: string;
-                    reviewStatus?: components["schemas"]["CaseReviewStatus"];
+                    reviewStatus?: components["schemas"]["CaseReviewStatusNullable"];
                     search?: string;
                     module?: string;
                     requirementId?: string;
                     flakyOnly?: boolean;
-                    execState?: components["schemas"]["CaseExecFilter"];
+                    execState?: components["schemas"]["CaseExecFilterNullable"];
                     page?: number;
                     pageSize?: number;
                 };
@@ -4177,7 +4177,7 @@ export interface paths {
                 query?: {
                     projectId?: string;
                     testCaseId?: string;
-                    status?: components["schemas"]["ExecutionStatus"];
+                    status?: components["schemas"]["ExecutionStatusNullable"];
                     days?: number;
                     runningOnly?: boolean;
                     suiteRunId?: string;
@@ -6035,7 +6035,7 @@ export interface paths {
             parameters: {
                 query?: {
                     projectId?: string;
-                    kind?: components["schemas"]["SuiteKind"];
+                    kind?: components["schemas"]["SuiteKindNullable"];
                     keyword?: string;
                     page?: number;
                     pageSize?: number;
@@ -6479,7 +6479,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    kind?: components["schemas"]["ReportShareKind"];
+                    kind?: components["schemas"]["ReportShareKindNullable"];
                     refId?: string;
                 };
                 header?: never;
@@ -7516,9 +7516,9 @@ export interface components {
         };
         /**
          * Format: int32
-         * @enum {integer}
+         * @enum {integer|null}
          */
-        AgentAttemptResult: 0 | 1 | 2 | 3 | 4 | 5;
+        AgentAttemptResultNullable: 0 | 1 | 2 | 3 | 4 | 5 | null;
         AgentHealMetricsDto: {
             /** Format: int32 */
             totalAttempts?: number;
@@ -7634,7 +7634,7 @@ export interface components {
             ids?: string[];
             module?: string | null;
             priority?: string | null;
-            status?: components["schemas"]["TestCaseStatus"];
+            status?: components["schemas"]["TestCaseStatusNullable"];
             /** Format: uuid */
             projectId?: string | null;
             /** Format: uuid */
@@ -7647,14 +7647,19 @@ export interface components {
         };
         /**
          * Format: int32
-         * @enum {integer}
+         * @enum {integer|null}
          */
-        CaseExecFilter: 0 | 1 | 2 | 3 | 4 | 5;
+        CaseExecFilterNullable: 0 | 1 | 2 | 3 | 4 | 5 | null;
         /**
          * Format: int32
          * @enum {integer}
          */
         CaseReviewStatus: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        CaseReviewStatusNullable: 0 | 1 | 2 | 3 | null;
         CaseVariableCheckDto: {
             /** Format: uuid */
             testCaseId?: string;
@@ -7695,6 +7700,11 @@ export interface components {
          * @enum {integer}
          */
         CommentTarget: 0 | 1 | 2;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        CommentTargetNullable: 0 | 1 | 2 | null;
         CreateApiTokenRequest: {
             name?: string | null;
             /** Format: int32 */
@@ -7816,7 +7826,7 @@ export interface components {
             actualStartDate?: string | null;
             /** Format: date-time */
             actualEndDate?: string | null;
-            status?: components["schemas"]["RequirementStatus"];
+            status?: components["schemas"]["RequirementStatusNullable"];
         };
         CreateScheduleRequest: {
             /** Format: uuid */
@@ -7910,7 +7920,7 @@ export interface components {
             targetPassRate?: number | null;
             allowErrors?: boolean | null;
             excludeFlakyFromFailure?: boolean | null;
-            gateMode?: components["schemas"]["PlanGateMode"];
+            gateMode?: components["schemas"]["PlanGateModeNullable"];
             defectGateEnabled?: boolean | null;
             /** Format: uuid */
             environmentId?: string | null;
@@ -8174,6 +8184,11 @@ export interface components {
          * @enum {integer}
          */
         DefectSeverity: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        DefectSeverityNullable: 0 | 1 | 2 | 3 | null;
         DefectStatsDto: {
             /** Format: int32 */
             openTotal?: number;
@@ -8200,6 +8215,11 @@ export interface components {
          * @enum {integer}
          */
         DefectStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        DefectStatusNullable: 0 | 1 | 2 | 3 | 4 | 5 | 6 | null;
         DefectTransitionRequest: {
             action?: string;
             /** Format: uuid */
@@ -8313,7 +8333,7 @@ export interface components {
             agentHealed?: boolean;
             /** Format: int32 */
             agentBudgetUsed?: number;
-            agentFinalVerdict?: components["schemas"]["AgentAttemptResult"];
+            agentFinalVerdict?: components["schemas"]["AgentAttemptResultNullable"];
             /** Format: int32 */
             stepRetryCount?: number;
             /** Format: int32 */
@@ -8451,6 +8471,11 @@ export interface components {
          * @enum {integer}
          */
         ExecutionStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        ExecutionStatusNullable: 0 | 1 | 2 | 3 | 4 | 5 | 6 | null;
         ExecutionSummaryDto: {
             /** Format: uuid */
             id?: string;
@@ -8822,17 +8847,17 @@ export interface components {
             /** Format: int32 */
             todayCompleted?: number;
         };
-        /**
-         * Format: int32
-         * @enum {integer}
-         */
-        NotificationCategory: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
         NotificationCategoryCount: {
             /** Format: int32 */
             category?: number;
             /** Format: int32 */
             count?: number;
         };
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        NotificationCategoryNullable: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | null;
         NotificationDto: {
             /** Format: uuid */
             id?: string;
@@ -8910,6 +8935,11 @@ export interface components {
          * @enum {integer}
          */
         PlanGateMode: 0 | 1;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        PlanGateModeNullable: 0 | 1 | null;
         PlanGateResult: {
             passed?: boolean;
             planName?: string;
@@ -9187,6 +9217,11 @@ export interface components {
          * @enum {integer}
          */
         ReportShareKind: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        ReportShareKindNullable: 0 | 1 | 2 | 3 | null;
         Requirement: {
             /** Format: uuid */
             id?: string;
@@ -9281,6 +9316,11 @@ export interface components {
          * @enum {integer}
          */
         RequirementStatus: 0 | 1 | 2;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        RequirementStatusNullable: 0 | 1 | 2 | null;
         ResetPasswordRequest: {
             newPassword?: string;
         };
@@ -9704,6 +9744,11 @@ export interface components {
          * @enum {integer}
          */
         SuiteKind: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        SuiteKindNullable: 0 | 1 | 2 | 3 | null;
         SuiteRunSummaryDto: {
             /** Format: uuid */
             suiteRunId?: string;
@@ -9928,6 +9973,11 @@ export interface components {
          * @enum {integer}
          */
         TestCaseStatus: 0 | 1;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        TestCaseStatusNullable: 0 | 1 | null;
         TestCaseSummaryDto: {
             /** Format: uuid */
             id?: string;
@@ -9973,7 +10023,7 @@ export interface components {
             requirementId?: string | null;
             requirementTitle?: string | null;
             projectName?: string | null;
-            latestExecutionStatus?: components["schemas"]["ExecutionStatus"];
+            latestExecutionStatus?: components["schemas"]["ExecutionStatusNullable"];
             /** Format: date-time */
             lastExecutedAt?: string | null;
             createdByName?: string | null;
@@ -10119,7 +10169,7 @@ export interface components {
             module?: string | null;
             priority?: string | null;
             type?: components["schemas"]["TestType"];
-            status?: components["schemas"]["TestCaseStatus"];
+            status?: components["schemas"]["TestCaseStatusNullable"];
             isFlaky?: boolean;
             /** Format: int32 */
             order?: number;
@@ -10162,6 +10212,11 @@ export interface components {
          * @enum {integer}
          */
         TestPlanStatus: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        TestPlanStatusNullable: 0 | 1 | 2 | 3 | null;
         TestPlanSummaryDto: {
             /** Format: uuid */
             id?: string;
@@ -10374,7 +10429,7 @@ export interface components {
             actualStartDate?: string | null;
             /** Format: date-time */
             actualEndDate?: string | null;
-            status?: components["schemas"]["RequirementStatus"];
+            status?: components["schemas"]["RequirementStatusNullable"];
         };
         UpdateScheduleRequest: {
             name?: string;
@@ -10487,7 +10542,7 @@ export interface components {
             targetPassRate?: number | null;
             allowErrors?: boolean | null;
             excludeFlakyFromFailure?: boolean | null;
-            gateMode?: components["schemas"]["PlanGateMode"];
+            gateMode?: components["schemas"]["PlanGateModeNullable"];
             defectGateEnabled?: boolean | null;
             /** Format: uuid */
             environmentId?: string | null;
@@ -10566,6 +10621,11 @@ export interface components {
          * @enum {integer}
          */
         UserRole: 0 | 1 | 2 | 3;
+        /**
+         * Format: int32
+         * @enum {integer|null}
+         */
+        UserRoleNullable: 0 | 1 | 2 | 3 | null;
         VisualBaselineDto: {
             /** Format: uuid */
             id?: string;

@@ -43,7 +43,12 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
     <PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.2.0" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <!-- 不能低于 8.1.2：Microsoft.OpenApi 自 1.6.23 起把生成文档的 `openapi` 字段写成 "3.0.4"，
+         而 Swashbuckle ≤7.1.0 内嵌的 swagger-ui 只认 `^3\.0\.[0123]$`，接口文档页会整页报
+         「The provided definition does not specify a valid version field」。8.1.2 起内嵌的
+         swagger-ui 换成 `^3\.0\.(?:[1-9]\d*|0)$`，接受 3.0.4。
+         依赖仍是 Microsoft.OpenApi 1.6.23（1.6 线），与 Microsoft.OpenApi.Readers 同线不冲突。 -->
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.2" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
     <PackageReference Include="WireMock.Net" Version="2.15.0" />
   </ItemGroup>
