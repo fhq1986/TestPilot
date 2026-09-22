@@ -38,13 +38,17 @@ done
 
 echo "==> 采集覆盖率（单元测试）"
 rm -rf "$OUT"
+# "ProgramFiles(x86)" 变量名自带括号，bash 的 ${...} 参数展开无法直接引用它
+# （写成 ${ProgramFiles(x86):-...} 会直接 bad substitution，脚本根本跑不到门禁那一步）。
+# 因此先用 printenv 取值，再以普通变量名透传给子进程。
+PROGRAMFILES_X86="$(printenv 'ProgramFiles(x86)' 2>/dev/null || true)"
 (
   cd "$ROOT/backend" || exit 1
   # dotnet 参数不能用 POSIX 绝对路径（/d/... 会被解析成 D:\d\...），故用相对路径
   env "APPDATA=${APPDATA:-$HOME/AppData/Roaming}" \
       "LOCALAPPDATA=${LOCALAPPDATA:-$HOME/AppData/Local}" \
       "PROGRAMFILES=${PROGRAMFILES:-C:/Program Files}" \
-      "ProgramFiles(x86)=${ProgramFiles(x86):-C:/Program Files (x86)}" \
+      "ProgramFiles(x86)=${PROGRAMFILES_X86:-C:/Program Files (x86)}" \
       "PROGRAMDATA=${PROGRAMDATA:-C:/ProgramData}" \
       "$DOTNET_BIN" test tests/AI.TestPlatform.UnitTests \
         --collect:"XPlat Code Coverage" \
