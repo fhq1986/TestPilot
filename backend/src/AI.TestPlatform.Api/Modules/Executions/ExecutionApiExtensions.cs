@@ -549,20 +549,6 @@ public static class ExecutionApiExtensions
 }
 
 /// <summary>
-/// Npgsql timestamptz 只接受 DateTime.Kind=Utc。
-/// [FromQuery] 绑定 URL "2026-09-22" 时 Kind=Unspecified → 本辅助做 SpecifyKind(Local) + ToUniversalTime。
-/// </summary>
-internal static class DateTimeUtcHelper
-{
-    public static DateTime SpecifyUtc(DateTime value) => value.Kind switch
-    {
-        DateTimeKind.Utc => value,
-        DateTimeKind.Local => value.ToUniversalTime(),
-        _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime(),
-    };
-}
-
-/// <summary>
 /// 执行里某一步骤已关联的缺陷（GET /executions/{id}/defect-links）。
 /// 前端「缺陷」列据此把已转单的步骤显示成缺陷链接，而不是再给一个「转缺陷」入口。
 /// </summary>

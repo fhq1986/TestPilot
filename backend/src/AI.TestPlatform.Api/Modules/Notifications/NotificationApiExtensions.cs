@@ -59,12 +59,17 @@ public static class NotificationApiExtensions
                 query = query.Where(n => EF.Functions.Like(n.Title, $"%{kw}%")
                                          || (n.Body != null && EF.Functions.Like(n.Body, $"%{kw}%")));
             }
-            if (dateFrom.HasValue) query = query.Where(n => n.CreatedAt >= dateFrom.Value);
+            // Npgsql timestamptz 只接受 Kind=Utc；[FromQuery] 绑 URL "2026-09-22" → Kind=Unspecified → 必须转
+            if (dateFrom.HasValue)
+            {
+                var fromUtc = DateTimeUtcHelper.SpecifyUtc(dateFrom.Value);
+                query = query.Where(n => n.CreatedAt >= fromUtc);
+            }
             if (dateTo.HasValue)
             {
                 // dateTo 是"当天 23:59:59.999"的语义 — 用户选 9/21 想包含当天所有消息
-                var toExclusive = dateTo.Value.Date.AddDays(1);
-                query = query.Where(n => n.CreatedAt < toExclusive);
+                var toExclusiveUtc = DateTimeUtcHelper.SpecifyUtc(dateTo.Value.Date.AddDays(1));
+                query = query.Where(n => n.CreatedAt < toExclusiveUtc);
             }
 
             var total = await query.CountAsync(ct);
