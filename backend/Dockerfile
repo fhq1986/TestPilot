@@ -42,7 +42,10 @@ FROM docker.1ms.run/grafana/k6:latest AS k6
 # 用 `command -v` 定位而不是写死 /usr/bin/k6：官方镜像换过基础发行版（alpine/debian），
 # 二进制位置可能变。定死路径的话，一旦上游挪位置，构建会以「找不到文件」失败，
 # 而失败信息不会告诉你「其实是路径变了」。这里先归一到一个固定位置再 COPY。
-RUN cp "$(command -v k6)" /k6 && /k6 version
+#
+# 暂存到 /tmp 而不是 /：官方 k6 镜像以非 root 用户运行，写根目录会
+# 「cp: can't create '/k6': Permission denied」直接把构建打挂（远程实测踩过）。
+RUN cp "$(command -v k6)" /tmp/k6 && /tmp/k6 version
 
 # ---------- 运行阶段 ----------
 FROM ubuntu:24.04 AS runtime
@@ -52,8 +55,8 @@ RUN mkdir -p /app/screenshots /app/traces /app/recordings /app/loadtests
 
 COPY --from=build /app/publish ./
 
-# 压测执行器：k6 二进制（见上面的 k6 阶段，已归一为 /k6）
-COPY --from=k6 /k6 /usr/local/bin/k6
+# 压测执行器：k6 二进制（见上面的 k6 阶段，已归一为 /tmp/k6）
+COPY --from=k6 /tmp/k6 /usr/local/bin/k6
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
     DOTNET_ROOT=/usr/lib/dotnet \
