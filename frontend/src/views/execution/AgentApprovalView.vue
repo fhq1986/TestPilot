@@ -3,30 +3,33 @@
     <el-card class="approval-card">
 
       <!-- 自愈度量：把「Agent 修得怎么样」摆在审批动作之前；
-           误判数 > 0 时高亮，提示可能有真实缺陷被自愈掩盖，需要人工回看 -->
+           误判数 > 0 时整张卡转危险色，提示可能有真实缺陷被自愈掩盖，需要人工回看 -->
       <div v-loading="metricsLoading" class="heal-strip">
-        <div class="heal-item">
-          <span class="heal-value">{{ metrics?.totalAttempts ?? 0 }}</span>
-          <span class="heal-label">自愈尝试</span>
+        <div class="heal-items">
+          <div class="heal-item tone-total">
+            <span class="heal-value">{{ metrics?.totalAttempts ?? 0 }}</span>
+            <span class="heal-label">自愈尝试</span>
+          </div>
+          <div class="heal-item tone-ok">
+            <span class="heal-value">{{ successRate.value }}<small v-if="successRate.unit">{{ successRate.unit }}</small></span>
+            <span class="heal-label">修复成功率</span>
+          </div>
+          <div class="heal-item tone-plain">
+            <span class="heal-value">{{ avgFix.value }}<small v-if="avgFix.unit">{{ avgFix.unit }}</small></span>
+            <span class="heal-label">平均修复时长</span>
+          </div>
+          <div class="heal-item tone-ok">
+            <span class="heal-value">{{ fixedPartial.value }}<small v-if="fixedPartial.unit">{{ fixedPartial.unit }}</small></span>
+            <span class="heal-label">已修复 / 部分</span>
+          </div>
+          <div class="heal-item" :class="misjudged > 0 ? 'tone-bad' : 'tone-plain'">
+            <span class="heal-value">{{ misjudged }}</span>
+            <span class="heal-label">疑似误判</span>
+          </div>
         </div>
-        <div class="heal-item">
-          <span class="heal-value">{{ successRateText }}</span>
-          <span class="heal-label">修复成功率</span>
-        </div>
-        <div class="heal-item">
-          <span class="heal-value">{{ avgFixText }}</span>
-          <span class="heal-label">平均修复时长</span>
-        </div>
-        <div class="heal-item">
-          <span class="heal-value">{{ fixedCount }}</span>
-          <span class="heal-label">已修复 / 部分</span>
-        </div>
-        <div class="heal-item" :class="{ 'is-warn': misjudged > 0 }">
-          <span class="heal-value">{{ misjudged }}</span>
-          <span class="heal-label">疑似误判</span>
-        </div>
-        <div class="heal-spacer" />
-        <el-radio-group v-model="healDays" size="small" @change="loadMetrics">
+        <!-- margin-left:auto 而不是加一个 flex:1 的占位块：窄屏换行时切换按钮仍靠右，
+             不会孤零零落在第二行最左边 -->
+        <el-radio-group v-model="healDays" size="small" class="heal-range" @change="loadMetrics">
           <el-radio-button :value="7">近 7 天</el-radio-button>
           <el-radio-button :value="30">近 30 天</el-radio-button>
           <el-radio-button :value="0">全部</el-radio-button>
@@ -125,17 +128,30 @@ const metricsLoading = ref(false)
 /** 度量时间窗口（天）：7 / 30；0 = 全部 */
 const healDays = ref(7)
 
-const successRateText = computed(() =>
-  metrics.value ? `${Math.round(metrics.value.successRate * 100)}%` : '—')
+/**
+ * 指标值拆成「数字 + 单位」两段：单位用小字淡色排，否则 26px 的 "%"、"秒"
+ * 会和数字一样抢视线，读数反而变慢。取不到数据时统一给「—」。
+ */
+type MetricText = { value: string; unit: string }
 
-const avgFixText = computed(() => {
-  const m = metrics.value?.avgFixMinutes
-  if (m === null || m === undefined) return '—'
-  return m < 1 ? `${Math.round(m * 60)} 秒` : `${m.toFixed(1)} 分`
+const successRate = computed<MetricText>(() => {
+  if (!metrics.value) return { value: '—', unit: '' }
+  return { value: String(Math.round(metrics.value.successRate * 100)), unit: '%' }
 })
 
-const fixedCount = computed(() =>
-  metrics.value ? `${metrics.value.fixed} / ${metrics.value.partial}` : '—')
+const avgFix = computed<MetricText>(() => {
+  const m = metrics.value?.avgFixMinutes
+  if (m === null || m === undefined) return { value: '—', unit: '' }
+  return m < 1
+    ? { value: String(Math.round(m * 60)), unit: '秒' }
+    : { value: m.toFixed(1), unit: '分' }
+})
+
+/** 已修复 / 部分：斜杠后半段是同一个小字，读作「已修复 2，部分 0」 */
+const fixedPartial = computed<MetricText>(() => {
+  if (!metrics.value) return { value: '—', unit: '' }
+  return { value: String(metrics.value.fixed), unit: `/ ${metrics.value.partial}` }
+})
 
 const misjudged = computed(() => metrics.value?.misjudgedCount ?? 0)
 
@@ -256,43 +272,109 @@ onMounted(() => {
 }
 
 /* ---------------------------------------------------------------- 自愈度量条 */
-/* 紧凑一行，放在审批表之前：先看「Agent 修得怎么样」再看待办 */
+/* 5 张指标卡 + 右侧时间窗切换：先看「Agent 修得怎么样」再看待办。
+   卡片沿用 PlanReportPanel 的 stat-card 语言（顶色条 + 淡彩底 + hover 浮起），
+   同一套「指标卡」在平台各处长得一样，用户不必重新认一遍。 */
 .heal-strip {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 28px;
-  padding: 4px 4px 14px;
+  gap: 12px;
+  padding: 2px 2px 16px;
   border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
 }
 
-.heal-item {
+/* 卡片自己一组，便于窄屏时整体换行；组内再换行 */
+.heal-items {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.2;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
+
+/* 时间窗切换始终贴右。用 margin-left:auto 而不是 flex:1 占位块——
+   窄屏换行后占位块留在上一行，切换按钮会孤零零落在第二行最左边 */
+.heal-range {
+  margin-left: auto;
+}
+
+.heal-item {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-width: 120px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: #fff;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* 顶部 3px 色条：扫一眼按颜色分辨指标含义 */
+.heal-item::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--el-border-color);
+}
+
+.heal-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(31, 59, 115, 0.10);
+}
+
+/* 淡彩边框 + 同色浅底：边框随指标语义走，比灰边有辨识度又不抢数字 */
+.tone-total {
+  border-color: rgba(63, 127, 212, 0.38);
+  background: linear-gradient(180deg, #f6faff 0%, #fff 46%);
+}
+.tone-total::before { background: linear-gradient(90deg, #1f3b73, #3f7fd4); }
+
+.tone-ok {
+  border-color: rgba(103, 194, 58, 0.45);
+  background: linear-gradient(180deg, #f6fcf3 0%, #fff 46%);
+}
+.tone-ok::before { background: var(--el-color-success); }
+
+.tone-bad {
+  border-color: rgba(245, 108, 108, 0.45);
+  background: linear-gradient(180deg, #fef5f5 0%, #fff 46%);
+}
+.tone-bad::before { background: var(--el-color-danger); }
+
+/* 中性指标（平均时长 / 无误判时的误判数）：只留一条灰蓝条，不喧宾夺主 */
+.tone-plain::before { background: var(--el-color-info); }
 
 .heal-value {
-  font-size: 18px;
+  display: block;
+  font-size: 26px;
   font-weight: 600;
+  line-height: 1.2;
   color: #1f2d3d;
+  /* 等宽数字：轮询刷新时数字不会左右跳动 */
+  font-variant-numeric: tabular-nums;
 }
 
-.heal-label {
-  margin-top: 2px;
-  font-size: 12px;
+/* 单位（% / 秒 / 分 / 「/ 部分」）用小字淡色，别跟数字抢视线 */
+.heal-value small {
+  margin-left: 2px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--el-text-color-secondary);
 }
 
-/* 误判数 > 0：可能有真实缺陷被自愈掩盖，用危险色提醒回看 */
-.heal-item.is-warn .heal-value {
-  color: var(--el-color-danger);
+.heal-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
 }
 
-.heal-spacer {
-  flex: 1;
+/* 误判数 > 0：可能有真实缺陷被自愈掩盖，数字转危险色提醒回看 */
+.heal-item.tone-bad .heal-value {
+  color: var(--el-color-danger);
 }
 
 .wrap-table :deep(.cell) {
