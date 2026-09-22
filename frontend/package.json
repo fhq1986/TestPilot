@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "type-check": "vue-tsc -b",
     "check:templates": "node scripts/check-templates.cjs",
+    "api:types": "node scripts/gen-api-types.mjs",
+    "api:types:check": "node scripts/gen-api-types.mjs --check",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -32,6 +34,7 @@
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.6.2",
     "vite": "^5.4.10",
     "vitest": "^3.2.7",

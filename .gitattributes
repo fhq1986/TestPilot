@@ -1,0 +1,4 @@
+# 契约基线是「逐字节比对」的产物：CI 与本地都用 npm run api:types:check 重新生成后比对。
+# Windows 上 core.autocrlf=true 会把签出的文件转成 CRLF，而生成器写的是 LF，
+# 会导致本地误报漂移（CI 在 Linux 上反而是 LF，看不出问题）。这里钉死 LF。
+frontend/src/types/generated/api.d.ts text eol=lf

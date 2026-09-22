@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net.Http;
+using AI.TestPlatform.Api.Common;
 using Minio;
 using Minio.DataModel;
 
@@ -218,12 +219,16 @@ public class MinioArtifactStore : IArtifactStore
     {
         try
         {
-            var exists = await _client.BucketExistsAsync(new BucketExistsArgs().WithBucket(_bucket), ct);
-            if (!exists)
+            // MinIO 启动/重启窗口内的连接抖动在这里重试，避免"首次写入就丢产物"
+            await Retry.ExecuteAsync(async c =>
             {
-                await _client.MakeBucketAsync(new MakeBucketArgs().WithBucket(_bucket), ct);
-                _logger.LogInformation("已创建产物 bucket {Bucket}", _bucket);
-            }
+                var exists = await _client.BucketExistsAsync(new BucketExistsArgs().WithBucket(_bucket), c);
+                if (!exists)
+                {
+                    await _client.MakeBucketAsync(new MakeBucketArgs().WithBucket(_bucket), c);
+                    _logger.LogInformation("已创建产物 bucket {Bucket}", _bucket);
+                }
+            }, _logger, $"检查/创建 bucket {_bucket}", ct: ct);
         }
         catch (Exception ex)
         {
@@ -235,7 +240,8 @@ public class MinioArtifactStore : IArtifactStore
     {
         try
         {
-            await PutObjectAsync(key, content, contentType, ct);
+            await Retry.ExecuteAsync(c => PutObjectAsync(key, content, contentType, c),
+                _logger, $"写入产物 {key}", ct: ct);
         }
         catch (Minio.Exceptions.BucketNotFoundException)
         {

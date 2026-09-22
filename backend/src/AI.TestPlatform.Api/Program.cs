@@ -112,7 +112,11 @@ builder.Services.AddSwaggerGen(options =>
 // M8/审计：SaveChanges 拦截器统一给带审计字段的实体盖「创建人/创建时间/修改人/修改时间」
 builder.Services.AddSingleton<AuditStampInterceptor>();
 builder.Services.AddDbContext<TestDbContext>((sp, options) =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"), npgsql => npgsql.UseVector())
+    // 迭代 E·④ 韧性：Npgsql 瞬时故障（连接闪断/主备切换）自动重试。
+    // 与启动时 pg_advisory_lock 迁移不冲突：那段代码显式 OpenConnectionAsync 后复用同一连接，
+    // 重试策略的 OpenAsync 对已打开的连接是 no-op，会话锁不会因重试而丢。
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"),
+               npgsql => npgsql.UseVector().EnableRetryOnFailure())
            .AddInterceptors(sp.GetRequiredService<AuditStampInterceptor>()));
 
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
@@ -123,12 +127,21 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 // 迭代 E·①：项目级授权（成员激活式；管理员全局放行）。供 ProjectScopeFilter 与成员管理端点复用。
 builder.Services.AddScoped<IProjectAuthorization, ProjectAuthorization>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-// SSO 扫码登录（企业微信 / 钉钉）：生效配置在系统设置页维护（SystemConfig 表，保存即生效）；
-// appsettings 的 Sso 节仅作为首次种子。默认全关——不配置时登录页只显示密码表单
-builder.Services.AddHttpClient("sso");
-// 外部缺陷系统（Jira/禅道）推送客户端：目标是公网/企业内网系统，走系统代理而非强制直连
+// SSO 扫码登录（企业微信 / 钉钉 / 标准 OIDC）：生效配置在系统设置页维护（SystemConfig 表，保存即生效）；
+// appsettings 的 Sso 节仅作为首次种子。默认全关——不配置时登录页只显示密码表单。
+// 迭代 E·④：IdP 侧偶发 5xx / 连接抖动由标准弹性处理器兜底（发现文档与换令牌都是幂等只读/短事务）。
+builder.Services.AddHttpClient("sso").AddStandardResilienceHandler();
+// 外部缺陷系统（Jira/禅道）推送客户端：目标是公网/企业内网系统，走系统代理而非强制直连。
+// 弹性处理器自带超时管理，故把 HttpClient.Timeout 放开为无限——否则它会先取消整条重试管道。
 builder.Services.AddHttpClient("external-defects", client =>
-    client.Timeout = TimeSpan.FromSeconds(30));
+    client.Timeout = Timeout.InfiniteTimeSpan)
+    .AddStandardResilienceHandler(o =>
+    {
+        o.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(60);
+        // 必须 ≤ 熔断采样窗口(默认 30s) 的一半，否则启动时 OptionsValidationException：
+        // "sampling duration ... needs to be at least double of an attempt timeout"
+        o.AttemptTimeout.Timeout = TimeSpan.FromSeconds(15);
+    });
 builder.Services.Configure<ExternalDefectOptions>(builder.Configuration.GetSection("ExternalDefects"));
 builder.Services.AddScoped<ExternalDefectPusher>();
 builder.Services.AddScoped<SsoLoginService>();

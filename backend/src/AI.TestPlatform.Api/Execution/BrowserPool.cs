@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AI.TestPlatform.Api.Common;
 using AI.TestPlatform.Application.Executions;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
@@ -86,7 +87,10 @@ public sealed class BrowserPool : IAsyncDisposable
                 await SafeDisposeBrowserAsync(dead.Browser);
             }
 
-            _playwright ??= await Playwright.CreateAsync();
+            // 驱动进程与浏览器冷启动偶发失败（系统资源瞬时紧张 / 驱动未就绪）在这里重试，
+            // 避免单条用例的启动抖动把整批执行拖成 Error（迭代 E·④ 韧性）。
+            _playwright ??= await Retry.ExecuteAsync(
+                _ => Playwright.CreateAsync(), _logger, "启动 Playwright 驱动进程", ct: ct);
             var browserType = engine switch
             {
                 BrowserCatalog.Firefox => _playwright.Firefox,
@@ -94,7 +98,9 @@ public sealed class BrowserPool : IAsyncDisposable
                 _ => _playwright.Chromium,
             };
 
-            var browser = await browserType.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+            var browser = await Retry.ExecuteAsync(
+                _ => browserType.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true }),
+                _logger, $"启动浏览器 {engine}", ct: ct);
             var entry = new PooledEntry
             {
                 Browser = browser,

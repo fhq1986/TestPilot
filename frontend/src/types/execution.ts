@@ -197,3 +197,29 @@ export const agentAttemptResultTagType = (
     number,
     string
   >)[value] ?? 'info') as 'success' | 'danger' | 'warning' | 'info'
+
+/**
+ * M8 自愈度量（迭代 D2）：时间窗口内自愈尝试的聚合指标 + 误判检测。
+ * 字段名与后端 AgentHealMetricsDto 的 camelCase 序列化一一对应。
+ */
+export interface AgentHealMetrics {
+  totalAttempts: number
+  fixed: number
+  partial: number
+  failed: number
+  skipped: number
+  rejected: number
+  budgetExhausted: number
+  other: number
+  /** (Fixed + Partial) / Total，0~1 */
+  successRate: number
+  /** 平均修复时长（分钟）；无已完成尝试时为 null */
+  avgFixMinutes?: number | null
+  /** 修复类别（FixCategory 数值）→ 次数 */
+  byCategory: Record<number, number>
+  /**
+   * 疑似误判：被标记「已修复」的步骤，在**同一用例后续执行**中于相同 StepOrder 再次失败的次数。
+   * 大于 0 说明可能有真实缺陷被自愈掩盖，需要人工回看。
+   */
+  misjudgedCount: number
+}

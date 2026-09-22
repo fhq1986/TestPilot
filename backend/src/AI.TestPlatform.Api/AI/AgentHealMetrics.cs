@@ -18,6 +18,11 @@ public static class AgentHealMetrics
     public static async Task<AgentHealMetricsDto> ComputeAsync(
         TestDbContext db, DateTime? from, DateTime? to, CancellationToken ct)
     {
+        // [FromQuery] 绑定不带时区的日期串（?from=2026-09-22）时 Kind=Unspecified，
+        // Npgsql 的 timestamptz 会直接拒绝 → 入 EF 查询前统一转 UTC（与执行记录/消息中心同一条铁律）。
+        from = DateTimeUtcHelper.SpecifyUtc(from);
+        to = DateTimeUtcHelper.SpecifyUtc(to);
+
         var q = db.AgentAttempts.AsNoTracking().AsQueryable();
         if (from is not null) q = q.Where(a => a.CreatedAt >= from.Value);
         if (to is not null) q = q.Where(a => a.CreatedAt <= to.Value);

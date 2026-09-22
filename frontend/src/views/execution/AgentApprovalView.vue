@@ -2,6 +2,37 @@
   <div class="approval-page">
     <el-card class="approval-card">
 
+      <!-- 自愈度量：把「Agent 修得怎么样」摆在审批动作之前；
+           误判数 > 0 时高亮，提示可能有真实缺陷被自愈掩盖，需要人工回看 -->
+      <div v-loading="metricsLoading" class="heal-strip">
+        <div class="heal-item">
+          <span class="heal-value">{{ metrics?.totalAttempts ?? 0 }}</span>
+          <span class="heal-label">自愈尝试</span>
+        </div>
+        <div class="heal-item">
+          <span class="heal-value">{{ successRateText }}</span>
+          <span class="heal-label">修复成功率</span>
+        </div>
+        <div class="heal-item">
+          <span class="heal-value">{{ avgFixText }}</span>
+          <span class="heal-label">平均修复时长</span>
+        </div>
+        <div class="heal-item">
+          <span class="heal-value">{{ fixedCount }}</span>
+          <span class="heal-label">已修复 / 部分</span>
+        </div>
+        <div class="heal-item" :class="{ 'is-warn': misjudged > 0 }">
+          <span class="heal-value">{{ misjudged }}</span>
+          <span class="heal-label">疑似误判</span>
+        </div>
+        <div class="heal-spacer" />
+        <el-radio-group v-model="healDays" size="small" @change="loadMetrics">
+          <el-radio-button :value="7">近 7 天</el-radio-button>
+          <el-radio-button :value="30">近 30 天</el-radio-button>
+          <el-radio-button :value="0">全部</el-radio-button>
+        </el-radio-group>
+      </div>
+
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <el-tab-pane label="待审批" name="pending" />
         <el-tab-pane label="已批准" name="approved" />
@@ -66,13 +97,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, toRefs } from 'vue'
+import { computed, onMounted, ref, toRefs } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { approveAgentAttempt, getAgentApprovals, rejectAgentAttempt } from '@/api/execution'
+import {
+  approveAgentAttempt, getAgentApprovals, getAgentHealMetrics, rejectAgentAttempt,
+} from '@/api/execution'
 import {
   AGENT_ATTEMPT_RESULT_LABELS, FIX_CATEGORY_LABELS, agentAttemptResultTagType,
-  type AgentApprovalItem,
+  type AgentApprovalItem, type AgentHealMetrics,
 } from '@/types/execution'
 import { formatDateTime } from '@/utils/formatter'
 
@@ -85,6 +118,45 @@ const pageSize = ref(20)
 const loading = ref(false)
 /** 正在处理的 attemptId（按钮 loading，防重复点击） */
 const acting = ref<string | null>(null)
+
+// ------------------------------------------------------------ 自愈度量
+const metrics = ref<AgentHealMetrics | null>(null)
+const metricsLoading = ref(false)
+/** 度量时间窗口（天）：7 / 30；0 = 全部 */
+const healDays = ref(7)
+
+const successRateText = computed(() =>
+  metrics.value ? `${Math.round(metrics.value.successRate * 100)}%` : '—')
+
+const avgFixText = computed(() => {
+  const m = metrics.value?.avgFixMinutes
+  if (m === null || m === undefined) return '—'
+  return m < 1 ? `${Math.round(m * 60)} 秒` : `${m.toFixed(1)} 分`
+})
+
+const fixedCount = computed(() =>
+  metrics.value ? `${metrics.value.fixed} / ${metrics.value.partial}` : '—')
+
+const misjudged = computed(() => metrics.value?.misjudgedCount ?? 0)
+
+const loadMetrics = async () => {
+  metricsLoading.value = true
+  try {
+    const to = new Date()
+    const from = healDays.value > 0
+      ? new Date(to.getTime() - healDays.value * 24 * 60 * 60 * 1000)
+      : null
+    metrics.value = await getAgentHealMetrics({
+      from: from?.toISOString(),
+      to: to.toISOString(),
+    })
+  } catch {
+    // 度量拉不到不该弹错：它是辅助信息，审批表本身仍可用
+    metrics.value = null
+  } finally {
+    metricsLoading.value = false
+  }
+}
 
 const load = async () => {
   loading.value = true
@@ -146,7 +218,10 @@ const reject = async (row: AgentApprovalItem) => {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void loadMetrics()
+  void load()
+})
 </script>
 
 <style scoped>
@@ -178,6 +253,46 @@ onMounted(load)
 
 .muted {
   color: var(--el-text-color-secondary);
+}
+
+/* ---------------------------------------------------------------- 自愈度量条 */
+/* 紧凑一行，放在审批表之前：先看「Agent 修得怎么样」再看待办 */
+.heal-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 28px;
+  padding: 4px 4px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  flex-shrink: 0;
+}
+
+.heal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.heal-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.heal-label {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+/* 误判数 > 0：可能有真实缺陷被自愈掩盖，用危险色提醒回看 */
+.heal-item.is-warn .heal-value {
+  color: var(--el-color-danger);
+}
+
+.heal-spacer {
+  flex: 1;
 }
 
 .wrap-table :deep(.cell) {

@@ -1,6 +1,6 @@
 import request from './request'
 import type {
-  AgentApprovalItem, AgentAttempt, ExecutionDetail, ExecutionSummary, ExecutionStatus,
+  AgentApprovalItem, AgentAttempt, AgentHealMetrics, ExecutionDetail, ExecutionSummary, ExecutionStatus,
 } from '@/types/execution'
 import type { ExecutionDefectLink } from '@/types/defect'
 import type { PagedResult } from '@/types/project'
@@ -53,6 +53,10 @@ export const approveAgentAttempt = (attemptId: string) =>
 /** 驳回一次待审批修复（不改动用例） */
 export const rejectAgentAttempt = (attemptId: string) =>
   request.post<unknown, void>(`/executions/agent-attempts/${attemptId}/reject`)
+
+/** M8 自愈度量：时间窗口内自愈尝试的聚合指标 + 误判检测（管理看板消费） */
+export const getAgentHealMetrics = (params: { from?: string; to?: string }) =>
+  request.get<unknown, AgentHealMetrics>('/executions/agent-heal-metrics', { params })
 
 export const createExecution = (data: {
   testCaseId: string

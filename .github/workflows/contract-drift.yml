@@ -1,0 +1,98 @@
+name: 前后端契约漂移校验
+
+# 迭代 E·⑤：后端 DTO 改了但前端手写类型没跟上，过去只能等线上报错才发现。
+# 这里起一个真实后端（Development 才有 Swagger）拉取 swagger.json，
+# 用 scripts/gen-api-types.mjs 重新生成类型并与仓库里已提交的基线逐字节比对。
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/types/**'
+      - 'frontend/scripts/gen-api-types.mjs'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - '.github/workflows/contract-drift.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/src/types/**'
+      - 'frontend/scripts/gen-api-types.mjs'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - '.github/workflows/contract-drift.yml'
+
+jobs:
+  contract-drift:
+    runs-on: ubuntu-latest
+    services:
+      # 后端启动即跑迁移 + 种子，且迁移里有 CREATE EXTENSION vector，故用带 pgvector 的镜像
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Swagger 只在 Development 注册，契约校验必须跑在这个环境
+      ASPNETCORE_ENVIRONMENT: Development
+      SWAGGER_URL: http://127.0.0.1:5199/swagger/v1/swagger.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 构建后端
+        run: dotnet build backend/src/AI.TestPlatform.Api -c Release
+
+      - name: 启动后端（仅为暴露 Swagger）
+        run: |
+          nohup dotnet run --project backend/src/AI.TestPlatform.Api -c Release --no-build \
+            --urls http://127.0.0.1:5199 > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: 等待 Swagger 就绪
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "$SWAGGER_URL" -o /dev/null; then
+              echo "Swagger 就绪（第 ${i} 次探测）"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::后端在 180s 内未暴露 Swagger，无法校验契约"
+          tail -n 80 /tmp/api.log
+          exit 1
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 校验契约漂移
+        working-directory: frontend
+        run: npm run api:types:check
+
+      - name: 后端启动日志（失败时定位用）
+        if: failure()
+        run: tail -n 120 /tmp/api.log || true
+
+      - name: 停止后端
+        if: always()
+        run: kill "$(cat /tmp/api.pid)" 2>/dev/null || true
