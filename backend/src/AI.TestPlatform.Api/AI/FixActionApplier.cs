@@ -347,10 +347,13 @@ public static class FixActionApplier
             error = "URL 含非法字符";
             return false;
         }
+        // 相对路径（如 /login）必须先于绝对解析判定，否则结论会随宿主平台翻转：
+        // Windows 上 Uri.TryCreate(..., Absolute) 拒绝 "/login"，走到下面「无效」分支；
+        // 而 Linux 上会把它解析成 file:///login，于是被 scheme 白名单挡掉。
+        // 同一条 AI 修复动作，在开发机（Windows）能过、在容器（Linux）被拒——正是要避免的漂移。
+        if (trimmed.StartsWith('/')) return true;
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
         {
-            // 相对路径（如 /login）是合法的
-            if (trimmed.StartsWith('/')) return true;
             error = $"URL 无效：{url}";
             return false;
         }

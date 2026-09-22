@@ -93,8 +93,19 @@ public class RecorderLaunchSpecTests
     [Fact]
     public void 工作目录取CLI所在目录()
     {
-        // codegen 要在包目录里解析内置依赖，工作目录设错会在启动时才发现
-        Assert.Equal(@"C:\app\.playwright\package", Spec().WorkingDirectory);
+        // codegen 要在包目录里解析内置依赖，工作目录设错会在启动时才发现。
+        // 路径按当前平台拼：Path.GetDirectoryName 只认本机分隔符，写死 Windows 路径
+        // 在 Linux（CI）上会得到空串，用例假失败。
+        var dir = Path.Combine("app", ".playwright", "package");
+        var spec = new RecorderLaunchSpec(
+            NodePath: "node",
+            CliPath: Path.Combine(dir, "cli.js"),
+            OutputPath: Path.Combine("out", "abc.ts"),
+            Browser: "chromium",
+            ViewportSize: null,
+            BaseUrl: null);
+
+        Assert.Equal(dir, spec.WorkingDirectory);
     }
 
     [Fact]
