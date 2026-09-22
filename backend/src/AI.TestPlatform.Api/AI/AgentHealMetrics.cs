@@ -42,8 +42,12 @@ public static class AgentHealMetrics
 
         double successRate = total == 0 ? 0 : (double)(Fixed + Partial) / total;
 
+        // 用 double? 而不是 double：没有已完成尝试时 AVG 返回 NULL，若按非空 double 物化，
+        // EF 会抛「Sequence contains no elements」→ 端点 500。空库、或时间窗内没有自愈记录时
+        // 就是这个情况（新部署后第一次打开看板必踩）。平均值无从谈起时给 null，
+        // 前端显示「未采集」，而不是编一个 0 出来（0 会被读成「修复耗时为零」）。
         double? avgFix = await q.Where(a => a.CompletedAt != null)
-            .Select(a => (a.CompletedAt!.Value - a.CreatedAt).TotalMinutes)
+            .Select(a => (double?)(a.CompletedAt!.Value - a.CreatedAt).TotalMinutes)
             .AverageAsync(ct);
 
         var byCategory = await q.GroupBy(a => a.FixCategory)
