@@ -16,7 +16,7 @@
             全部
           </button>
           <button v-for="c in unreadChips" :key="c.value" type="button" class="chip"
-            :class="{ active: category === c.value }" @click="pickCategory(c.value)">
+            :class="{ active: category === c.value }" @click="pickCategory(c.value, true)">
             <el-icon>
               <component :is="categoryIcon(c.value)" />
             </el-icon>
@@ -182,9 +182,16 @@ const unreadChips = computed(() =>
     .map((c) => ({ value: c.category, count: c.count, label: categoryLabel(c.category) })),
 )
 
-/** 概览标签与工具栏下拉是同一个筛选项，点哪边都行 */
-const pickCategory = (value: number | undefined) => {
+/**
+ * 概览标签与工具栏下拉是同一个筛选项，点哪边都行。
+ *
+ * 带数字的标签（数字 = 该分类未读数）点了必须**同时**开「仅看未读」：
+ * 否则角标写 1、列表却出来 3 条（含已读），数字与内容对不上。
+ * 不带数字的「全部」不强制未读，仍按工具栏里的搜索条件（含「仅看未读」勾选）出数据。
+ */
+const pickCategory = (value: number | undefined, unread = false) => {
   category.value = value
+  if (unread) unreadOnly.value = true
   reload()
 }
 
