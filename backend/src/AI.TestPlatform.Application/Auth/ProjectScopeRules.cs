@@ -15,7 +15,7 @@ public static class ProjectScopeRules
     private const Permission TesterBits =
         Permission.ManageTestCases | Permission.RunExecutions | Permission.ManageDataSets |
         Permission.ManageBaselines | Permission.ManageSharedSteps | Permission.ManageSchedules |
-        Permission.ManageTestPlans;
+        Permission.ManageTestPlans | Permission.ManageLoadTests;
 
     /// <summary>
     /// 由全局权限反推所需项目角色：

@@ -5,6 +5,8 @@ using AI.TestPlatform.Api.AI;
 using AI.TestPlatform.Api.Auth;
 using AI.TestPlatform.Api.Auth.Sso;
 using AI.TestPlatform.Api.Execution;
+using AI.TestPlatform.Api.LoadTesting;
+using AI.TestPlatform.Api.Modules.LoadTests;
 using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Hubs;
 using AI.TestPlatform.Api.Mocks;
@@ -68,6 +70,19 @@ var builder = WebApplication.CreateBuilder(args);
 // 迭代 E·③：可观测性（Serilog 结构化日志 + OpenTelemetry trace/metrics；OTLP 导出 env 门控）
 builder.AddPlatformObservability();
 
+// 迭代 F·§3.8：本进程的角色（控制面 / 执行面）。
+// 「注册哪些 HostedService」「要不要映射 HTTP 端点」都是**注册期**决定，运行期再判断就晚了，
+// 所以在这里先从同一配置节读一份出来。DI 里的权威来源仍是下面的 Configure<ExecutionOptions>，
+// 两处读的是同一个键，不会分叉。
+var executionRole = builder.Configuration.GetSection("Execution").Get<ExecutionOptions>()?.Role
+                    ?? ExecutionRole.All;
+if (!executionRole.IsControlPlane())
+{
+    // 纯执行面进程不对外提供服务。这里绑随机回环端口而不是把 Kestrel 关掉：
+    // 后台任务与 SignalR 的 IHubContext 都依赖 Host 正常启动，只是没有任何可路由的端点。
+    builder.WebHost.UseUrls("http://127.0.0.1:0");
+}
+
 // 生产环境启动校验：敏感配置必须通过环境变量覆盖，禁止携带开发默认值上线
 if (builder.Environment.IsProduction())
 {
@@ -88,6 +103,13 @@ if (builder.Environment.IsProduction())
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    // 让 Swagger 尊重 C# 可空引用类型标注：`SelectorConfig? Selector` 会生成
+    // `nullable: true`，而不是一律按非空对象声明。
+    // 不开启的话，契约里「可空」与「非空」全被抹平——响应校验脚本会拿一个
+    // 声称必填的对象 schema 去校验实际为 null 的字段，报出成片假阳性，
+    // 门禁就失去意义（迭代 F·② 实测：selector / project 两个字段）。
+    options.SupportNonNullableReferenceTypes();
+
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -206,7 +228,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 // SignalR Redis backplane（审查发现）：单机部署不需要 Redis，留空即保持进程内广播；
-// 多实例部署时配置 SignalR:Redis 连接串，跨实例的执行事件才能送达任意节点上的客户端
+// 多实例部署时配置 SignalR:Redis 连接串，跨实例的执行事件才能送达任意节点上的客户端。
+// ⚠ 迭代 F·§3.8 起这一项对「执行面拆进程」是**必需**的：WorkerOnly 进程只拿 IHubContext
+//   发事件（它不映射 Hub），没有 backplane 的话事件发在自己进程里、没有浏览器连接，等于全丢。
+// 注意 AddSignalR 两种角色都要注册——它同时提供 IHubContext 这个「发布端」。
 var signalrBuilder = builder.Services.AddSignalR();
 var signalrRedis = builder.Configuration["SignalR:Redis"];
 if (!string.IsNullOrWhiteSpace(signalrRedis))
@@ -310,15 +335,37 @@ builder.Services.AddSingleton<AuthStateCache>();
 // 执行引擎参数（选择器快速探测 / 自愈行为 / 并行度 / 心跳），见 appsettings.json 的 Execution 节
 builder.Services.Configure<ExecutionOptions>(builder.Configuration.GetSection("Execution"));
 builder.Services.AddScoped<TestRunner>();
-builder.Services.AddHostedService<ExecutionWorker>();
-// 节点登记/心跳（分布式执行可观测）：每个运行执行器的进程都在 ExecutionNodes 表登记自己
-builder.Services.AddHostedService<ExecutionNodeRegistry>();
-// 定时任务：调度器 + 展开服务
-builder.Services.AddScoped<ScheduleService>();
-builder.Services.AddHostedService<ScheduleWorker>();
-// 周期保留期清理（审查发现）：截图/trace/审计日志的保留期不能只靠重启触发
+// 迭代 F·§3.8：执行面与调度面按角色注册。
+//   执行面（All / WorkerOnly）= 真正跑用例：执行 worker + 节点心跳 + 保留期清理
+//   调度面（All / ApiOnly）  = 只负责把到期的定时任务入队、以及录制器——它们属控制面职责，
+//                              放在 WorkerOnly 里没人触发，放在 ApiOnly 里必须有（否则定时任务永远不跑）
+if (executionRole.IsExecutionPlane())
+{
+    builder.Services.AddHostedService<ExecutionWorker>();
+    // 节点登记/心跳（分布式执行可观测）：每个运行执行器的进程都在 ExecutionNodes 表登记自己
+    builder.Services.AddHostedService<ExecutionNodeRegistry>();
+    // 周期保留期清理（审查发现）：截图/trace/审计日志的保留期不能只靠重启触发
+    builder.Services.AddHostedService<MaintenanceWorker>();
+}
+if (executionRole.IsControlPlane())
+{
+    // 定时任务：调度器 + 展开服务
+    builder.Services.AddScoped<ScheduleService>();
+    builder.Services.AddHostedService<ScheduleWorker>();
+    // 迭代 C：录制器参数（开关 / 录制目录 / 并发上限 / 空闲回收），见 appsettings.json 的 Recorder 节
+    builder.Services.Configure<RecorderOptions>(builder.Configuration.GetSection("Recorder"));
+    builder.Services.AddHostedService<RecorderWorker>();
+}
 builder.Services.Configure<MaintenanceOptions>(builder.Configuration.GetSection("Maintenance"));
-builder.Services.AddHostedService<MaintenanceWorker>();
+// 迭代 F·P2-9：压测场景（k6）。执行器属执行面，脚本生成器与 API 属控制面/共用。
+builder.Services.Configure<LoadTestOptions>(builder.Configuration.GetSection("LoadTest"));
+builder.Services.AddSingleton<LoadTestQueue>();
+builder.Services.AddScoped<LoadTestScriptBuilder>();
+builder.Services.AddSingleton<IK6ProcessRunner, K6ProcessRunner>();
+if (executionRole.IsExecutionPlane())
+{
+    builder.Services.AddHostedService<LoadTestWorker>();
+}
 // 迭代 B：执行计划器（浏览器矩阵 / 数据驱动展开）、套件运行、视觉回归
 builder.Services.AddScoped<ExecutionPlanner>();
 builder.Services.AddScoped<SuiteRunner>();
@@ -385,7 +432,8 @@ builder.Services.AddScoped<InAppNotificationService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// Swagger 也属控制面：WorkerOnly 进程没有任何端点可文档化，注册了只会多两个无用中间件
+if (app.Environment.IsDevelopment() && executionRole.IsControlPlane())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -486,54 +534,64 @@ app.UseRateLimiter();
 
 app.MapHealthChecks("/health");
 
-// 运行指标（Prometheus 文本格式）。**未配置 Metrics:Token 时不注册该端点**（表现为 404）——
-// 运维端点默认关闭，不给出"默认开启且无鉴权"的东西
-MetricsEndpoint.MapMetrics(app, builder.Configuration);
+// 以下全部是**控制面**：HTTP API、SignalR Hub、运维指标端点。
+// WorkerOnly 进程不映射它们——映射了也没人会访问（它绑在随机回环端口上），
+// 反而会让「这个进程到底提供什么」变得含糊。
+// 注意 /health 留在外面：Dockerfile 的 HEALTHCHECK 打的就是它，两种角色都需要。
+if (executionRole.IsControlPlane())
+{
+    // 运行指标（Prometheus 文本格式）。**未配置 Metrics:Token 时不注册该端点**（表现为 404）——
+    // 运维端点默认关闭，不给出"默认开启且无鉴权"的东西
+    MetricsEndpoint.MapMetrics(app, builder.Configuration);
 
-app.MapGroup("/api/auth").MapAuthApi();
-app.MapGroup("/api/users").MapUserApi().RequireAuthorization();
-app.MapGroup("/api/nodes").MapNodeApi().RequireAuthorization();
-app.MapGroup("/api/audit").MapAuditApi().RequireAuthorization();
-app.MapGroup("/api/recorder").MapRecorderApi().RequireAuthorization();
-app.MapGroup("/api/shared-steps").MapSharedStepApi().WithProjectScope(ProjectResource.SharedStep).RequireAuthorization();
-// 迭代 E·①-4：项目作用域扩到各业务模块。resource 声明 by-id 端点如何把资源 id 反查成项目 id；
-// 查询串 projectId（列表端点）由过滤器直接解析，无需在此声明。
-app.MapGroup("/api/test-plans").MapTestPlanApi().WithProjectScope(ProjectResource.TestPlan).RequireAuthorization();
-app.MapGroup("/api/projects").MapProjectApi().WithProjectScope(ProjectResource.Project).RequireAuthorization();
-app.MapGroup("/api/projects").MapProjectApiTokenApi().WithProjectScope().RequireAuthorization();
-app.MapGroup("/api/projects").MapCustomFieldApi().WithProjectScope().RequireAuthorization();
-app.MapGroup("/api/projects").MapProjectMemberApi().WithProjectScope().RequireAuthorization();
-app.MapGroup("/api/comments").MapCommentApi();
-app.MapGroup("/api/notifications").MapNotificationApi();
-app.MapGroup("/api/defects").MapDefectApi().WithProjectScope(ProjectResource.Defect).RequireAuthorization();
-app.MapGroup("/api/requirements").MapRequirementApi().WithProjectScope(ProjectResource.Requirement).RequireAuthorization();
-// 富文本图片上传（/api/artifacts/image）：需求说明、缺陷描述里插入图片用
-app.MapGroup("/api/artifacts").MapArtifactApi().RequireAuthorization();
-app.MapGroup("/api/testcases").MapTestCaseApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
-// 用例版本历史（/api/testcases/{id}/versions…）
-app.MapGroup("/api/testcases").MapTestCaseVersionApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
-app.MapGroup("/api/executions").MapExecutionApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
-app.MapGroup("/api/ai").MapAIApi().RequireAuthorization().RequireRateLimiting("ai");
-app.MapGroup("/api/chat").MapChatApi().RequireAuthorization().RequireRateLimiting("ai");
-app.MapGroup("/api/mocks").MapMockApi().RequireAuthorization();
-app.MapGroup("/api/settings").MapSettingsApi().RequireAuthorization();
-app.MapGroup("/api/stats").MapStatsApi().RequireAuthorization();
-app.MapGroup("/api/reports").MapReportApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
-app.MapGroup("/api/schedules").MapScheduleApi().WithProjectScope(ProjectResource.Schedule).RequireAuthorization();
-app.MapGroup("/api/datasets").MapDataSetApi().WithProjectScope(ProjectResource.DataSet).RequireAuthorization();
-app.MapGroup("/api/suites").MapSuiteApi().WithProjectScope(ProjectResource.TestSuite).RequireAuthorization();
-app.MapGroup("/api/visual").MapVisualApi().WithProjectScope(ProjectResource.VisualBaseline).RequireAuthorization();
-// 报告分享：/api/shares 管理令牌（需登录），/api/public 为免登录只读报告
-app.MapGroup("/api/shares").MapShareApi().RequireAuthorization();
-app.MapGroup("/api/public").MapPublicReportApi();
-app.MapGroup("/api/scripts").MapScriptApi().RequireAuthorization();
-app.MapGroup("/api/projects/{projectId:guid}/environments").MapProjectEnvironmentsApi().WithProjectScope().RequireAuthorization();
-app.MapGroup("/api/environments").MapEnvironmentApi().WithProjectScope(ProjectResource.Environment).RequireAuthorization();
-// Webhook 独立 token 保护（X-Webhook-Token），不加 RequireAuthorization
-app.MapGroup("/api/webhooks").MapWebhookApi();
-app.MapHub<ExecutionHub>("/hubs/execution").RequireAuthorization();
-// 站内消息 Hub：按用户分组推送，与执行 Hub 的分组语义不同，刻意分开（见 NotificationHub 注释）
-app.MapHub<NotificationHub>("/hubs/notification").RequireAuthorization();
+    app.MapGroup("/api/auth").MapAuthApi();
+    app.MapGroup("/api/users").MapUserApi().RequireAuthorization();
+    app.MapGroup("/api/nodes").MapNodeApi().RequireAuthorization();
+    app.MapGroup("/api/audit").MapAuditApi().RequireAuthorization();
+    app.MapGroup("/api/recorder").MapRecorderApi().RequireAuthorization();
+    app.MapGroup("/api/shared-steps").MapSharedStepApi().WithProjectScope(ProjectResource.SharedStep).RequireAuthorization();
+    // 迭代 E·①-4：项目作用域扩到各业务模块。resource 声明 by-id 端点如何把资源 id 反查成项目 id；
+    // 查询串 projectId（列表端点）由过滤器直接解析，无需在此声明。
+    app.MapGroup("/api/test-plans").MapTestPlanApi().WithProjectScope(ProjectResource.TestPlan).RequireAuthorization();
+    app.MapGroup("/api/projects").MapProjectApi().WithProjectScope(ProjectResource.Project).RequireAuthorization();
+    app.MapGroup("/api/projects").MapProjectApiTokenApi().WithProjectScope().RequireAuthorization();
+    app.MapGroup("/api/projects").MapCustomFieldApi().WithProjectScope().RequireAuthorization();
+    app.MapGroup("/api/projects").MapProjectMemberApi().WithProjectScope().RequireAuthorization();
+    app.MapGroup("/api/comments").MapCommentApi();
+    app.MapGroup("/api/notifications").MapNotificationApi();
+    app.MapGroup("/api/defects").MapDefectApi().WithProjectScope(ProjectResource.Defect).RequireAuthorization();
+    app.MapGroup("/api/requirements").MapRequirementApi().WithProjectScope(ProjectResource.Requirement).RequireAuthorization();
+    // 富文本图片上传（/api/artifacts/image）：需求说明、缺陷描述里插入图片用
+    app.MapGroup("/api/artifacts").MapArtifactApi().RequireAuthorization();
+    app.MapGroup("/api/testcases").MapTestCaseApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
+    // 用例版本历史（/api/testcases/{id}/versions…）
+    app.MapGroup("/api/testcases").MapTestCaseVersionApi().WithProjectScope(ProjectResource.TestCase).RequireAuthorization();
+    app.MapGroup("/api/executions").MapExecutionApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
+    app.MapGroup("/api/ai").MapAIApi().RequireAuthorization().RequireRateLimiting("ai");
+    app.MapGroup("/api/chat").MapChatApi().RequireAuthorization().RequireRateLimiting("ai");
+    app.MapGroup("/api/mocks").MapMockApi().RequireAuthorization();
+    app.MapGroup("/api/settings").MapSettingsApi().RequireAuthorization();
+    app.MapGroup("/api/stats").MapStatsApi().RequireAuthorization();
+    app.MapGroup("/api/reports").MapReportApi().WithProjectScope(ProjectResource.Execution).RequireAuthorization();
+    app.MapGroup("/api/schedules").MapScheduleApi().WithProjectScope(ProjectResource.Schedule).RequireAuthorization();
+    app.MapGroup("/api/datasets").MapDataSetApi().WithProjectScope(ProjectResource.DataSet).RequireAuthorization();
+    app.MapGroup("/api/suites").MapSuiteApi().WithProjectScope(ProjectResource.TestSuite).RequireAuthorization();
+    app.MapGroup("/api/visual").MapVisualApi().WithProjectScope(ProjectResource.VisualBaseline).RequireAuthorization();
+    // 报告分享：/api/shares 管理令牌（需登录），/api/public 为免登录只读报告
+    app.MapGroup("/api/shares").MapShareApi().RequireAuthorization();
+    app.MapGroup("/api/public").MapPublicReportApi();
+    app.MapGroup("/api/scripts").MapScriptApi().RequireAuthorization();
+    // 迭代 F·P2-9：压测场景（k6）。by-id 端点按 LoadTestScenario 反查项目；
+    // /runs/{runId} 走 Run 上冗余的 ProjectId
+    app.MapGroup("/api/loadtests").MapLoadTestApi().WithProjectScope(ProjectResource.LoadTestScenario).RequireAuthorization();
+    app.MapGroup("/api/projects/{projectId:guid}/environments").MapProjectEnvironmentsApi().WithProjectScope().RequireAuthorization();
+    app.MapGroup("/api/environments").MapEnvironmentApi().WithProjectScope(ProjectResource.Environment).RequireAuthorization();
+    // Webhook 独立 token 保护（X-Webhook-Token），不加 RequireAuthorization
+    app.MapGroup("/api/webhooks").MapWebhookApi();
+    app.MapHub<ExecutionHub>("/hubs/execution").RequireAuthorization();
+    // 站内消息 Hub：按用户分组推送，与执行 Hub 的分组语义不同，刻意分开（见 NotificationHub 注释）
+    app.MapHub<NotificationHub>("/hubs/notification").RequireAuthorization();
+}
 
 // 启动时自动迁移 + 种子数据（开发/测试环境；生产环境改为显式迁移）
 using (var scope = app.Services.CreateScope())

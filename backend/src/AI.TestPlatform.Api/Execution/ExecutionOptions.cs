@@ -1,10 +1,59 @@
 namespace AI.TestPlatform.Api.Execution;
 
 /// <summary>
+/// 进程在「控制面 / 执行面」中的角色（迭代 F·§3.8）。
+///
+/// 拆分的动机：原先 API 进程同时也是执行进程，于是「重启一次 API」会连带中断正在跑的执行，
+/// 执行负载也没法独立扩缩容。把执行面抽成可选独立进程后，两者共享同一个 DB 队列
+/// （<c>FOR UPDATE SKIP LOCKED</c>），可以各自扩缩容、各自重启。
+///
+/// 枚举值按 int 落库/配置，只可末尾追加。
+/// </summary>
+public enum ExecutionRole
+{
+    /// <summary>控制面 + 执行面同进程（默认，与拆分前行为完全一致）</summary>
+    All = 0,
+
+    /// <summary>只做控制面：映射 HTTP 端点，不抢占执行任务</summary>
+    ApiOnly = 1,
+
+    /// <summary>只做执行面：不映射任何 HTTP 端点，只跑执行/心跳/维护</summary>
+    WorkerOnly = 2,
+}
+
+/// <summary>
+/// 角色 → 职责的判定（单一真源）。
+/// 放在枚举上而不是只在 <see cref="ExecutionOptions"/> 上：Program.cs 里判断的是**配置读出来的枚举值**
+/// （注册期还没有 DI 容器），两处各写一份 `is All or ApiOnly` 迟早会分叉。
+/// </summary>
+public static class ExecutionRoleExtensions
+{
+    /// <summary>是否承载控制面（HTTP 端点 / Swagger / SignalR Hub 映射）</summary>
+    public static bool IsControlPlane(this ExecutionRole role) =>
+        role is ExecutionRole.All or ExecutionRole.ApiOnly;
+
+    /// <summary>是否承载执行面（执行 worker / 节点心跳 / 维护任务）</summary>
+    public static bool IsExecutionPlane(this ExecutionRole role) =>
+        role is ExecutionRole.All or ExecutionRole.WorkerOnly;
+}
+
+/// <summary>
 /// 执行引擎可调参数（配置节：appsettings.json 的 Execution）
 /// </summary>
 public class ExecutionOptions
 {
+    /// <summary>
+    /// 本进程的角色。默认 <see cref="ExecutionRole.All"/>——单机部署下与拆分前完全一致；
+    /// 容器化部署时用 <c>Execution__Role=WorkerOnly</c> 起第二个进程做纯执行节点。
+    /// </summary>
+    public ExecutionRole Role { get; set; } = ExecutionRole.All;
+
+    /// <summary>是否承载控制面（HTTP 端点 / Swagger / SignalR Hub 映射）</summary>
+    public bool IsControlPlane => Role.IsControlPlane();
+
+    /// <summary>是否承载执行面（执行 worker / 节点心跳 / 维护任务）</summary>
+    public bool IsExecutionPlane => Role.IsExecutionPlane();
+
     /// <summary>
     /// 是否对「非 AI 选择器 + 有元素描述」的步骤启用快速探测。
     /// 开启后先用较短超时探测选择器是否存在，未命中立即转 AI 自愈，

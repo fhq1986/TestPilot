@@ -66,6 +66,10 @@ public class TestDbContext : DbContext
     public DbSet<AIElementCache> AIElementCaches => Set<AIElementCache>();
     public DbSet<ApiDefinition> ApiDefinitions => Set<ApiDefinition>();
     public DbSet<MockDefinition> MockDefinitions => Set<MockDefinition>();
+    // 迭代 F·P2-9：压测场景（k6），独立于功能执行流水线
+    public DbSet<LoadTestScenario> LoadTestScenarios => Set<LoadTestScenario>();
+    public DbSet<LoadTestScenarioCase> LoadTestScenarioCases => Set<LoadTestScenarioCase>();
+    public DbSet<LoadTestRun> LoadTestRuns => Set<LoadTestRun>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
     public DbSet<Environment> Environments => Set<Environment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -472,6 +476,103 @@ public class TestDbContext : DbContext
             entity.HasOne(a => a.Execution).WithMany()
                 .HasForeignKey(a => a.ExecutionId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ---------------- 迭代 F·P2-9：压测场景（k6）
+        modelBuilder.Entity<LoadTestScenario>(entity =>
+        {
+            entity.Property(s => s.Name).HasMaxLength(200);
+            entity.Property(s => s.Description).HasMaxLength(1000);
+            entity.Property(s => s.TargetBaseUrl).HasMaxLength(500);
+            entity.Property(s => s.ScriptHash).HasMaxLength(64);
+            entity.HasIndex(s => s.ProjectId);
+            // 同一项目内重名没有意义，且会让「选哪个压测场景」变得含糊
+            entity.HasIndex(s => new { s.ProjectId, s.Name }).IsUnique();
+            entity.HasOne(s => s.Project).WithMany()
+                .HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(s => s.Environment).WithMany()
+                .HasForeignKey(s => s.EnvironmentId).OnDelete(DeleteBehavior.SetNull);
+            // 文档被删时置空引用而不是删场景：场景本身（名称/负载/阈值）仍然有效，
+            // 只是暂时无法重新生成脚本——比静默丢一个场景好。
+            entity.HasOne(s => s.ApiDefinition).WithMany()
+                .HasForeignKey(s => s.ApiDefinitionId).OnDelete(DeleteBehavior.SetNull);
+
+            // 选中的 OpenAPI 操作（jsonb 字符串数组）
+            var operationsComparer = new ValueComparer<List<string>>(
+                (a, b) => a == null || b == null ? a == b : a.SequenceEqual(b),
+                v => v.Aggregate(0, (acc, item) => HashCode.Combine(acc, item)),
+                v => v.ToList());
+            entity.Property(s => s.Operations)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, JsonOptions),
+                    // 属性声明为非空 List，反序列化出 null 会破坏实体不变式（且 NRT 会告警），故兜空集合
+                    v => string.IsNullOrEmpty(v)
+                        ? new List<string>()
+                        : JsonSerializer.Deserialize<List<string>>(v, JsonOptions) ?? new List<string>())
+                .HasColumnType("jsonb")
+                .Metadata.SetValueComparer(operationsComparer);
+
+            // 负载配置与阈值：字段随 executor 互斥，列化会产出一片恒 NULL 列，故整体走 jsonb
+            entity.OwnsOne(s => s.Profile, profile =>
+            {
+                profile.ToJson();
+                profile.OwnsMany(p => p.Stages);
+            });
+            entity.OwnsMany(s => s.Thresholds, thresholds => thresholds.ToJson());
+
+            // 变量覆盖：与 Execution.Variables 同一套写法（jsonb + ValueComparer）
+            entity.Property(s => s.Variables)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, JsonOptions),
+                    v => string.IsNullOrEmpty(v)
+                        ? null
+                        : JsonSerializer.Deserialize<Dictionary<string, string>>(v, JsonOptions))
+                .HasColumnType("jsonb")
+                .Metadata.SetValueComparer(new ValueComparer<Dictionary<string, string>?>(
+                    (a, b) => a == null || b == null ? a == b : a.Count == b.Count && !a.Except(b).Any(),
+                    v => v == null ? 0 : v.Aggregate(0, (acc, kv) => HashCode.Combine(acc, kv.Key, kv.Value)),
+                    v => v == null ? null : new Dictionary<string, string>(v)));
+        });
+
+        modelBuilder.Entity<LoadTestScenarioCase>(entity =>
+        {
+            // 同一场景内同一用例只出现一次（顺序由 Order 表达）
+            entity.HasIndex(c => new { c.ScenarioId, c.TestCaseId }).IsUnique();
+            // 支持「这个用例被哪些压测场景引用」（用例删除前的提示）
+            entity.HasIndex(c => c.TestCaseId);
+            entity.HasOne(c => c.Scenario).WithMany(s => s.Cases)
+                .HasForeignKey(c => c.ScenarioId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(c => c.TestCase).WithMany()
+                .HasForeignKey(c => c.TestCaseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LoadTestRun>(entity =>
+        {
+            entity.Property(r => r.ClaimedBy).HasMaxLength(120);
+            entity.Property(r => r.TargetBaseUrl).HasMaxLength(500);
+            entity.Property(r => r.ScriptHash).HasMaxLength(64);
+            entity.Property(r => r.ScriptArtifactKey).HasMaxLength(300);
+            entity.Property(r => r.SummaryArtifactKey).HasMaxLength(300);
+            entity.Property(r => r.LogArtifactKey).HasMaxLength(300);
+            // k6 的 version 输出是整行，如
+            // "k6 v2.3.0 (commit/e088784614, go1.27.1, linux/amd64)"（59 字符）。
+            // 原来给 50 会让**整条运行记录保存失败**（22001 value too long），
+            // 表现为运行直接变 Error 且指标全丢——比版本号被截断严重得多，故留足余量。
+            entity.Property(r => r.K6Version).HasMaxLength(200);
+            entity.Property(r => r.ErrorMessage).HasMaxLength(2000);
+            // 抢占队列扫描（与 Executions 同构）
+            entity.HasIndex(r => new { r.Status, r.CreatedAt });
+            // 僵尸运行回收（执行器重启会带走 k6 子进程，必须能扫出来）
+            entity.HasIndex(r => new { r.Status, r.HeartbeatAt });
+            // 场景下的历史运行列表 / 趋势
+            entity.HasIndex(r => new { r.ScenarioId, r.CreatedAt });
+            // 项目作用域反查与按项目统计（冗余 ProjectId 就是为了这两件事）
+            entity.HasIndex(r => new { r.ProjectId, r.CreatedAt });
+            entity.HasOne(r => r.Scenario).WithMany(s => s.Runs)
+                .HasForeignKey(r => r.ScenarioId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.TriggeredBy).WithMany()
+                .HasForeignKey(r => r.TriggeredById).OnDelete(DeleteBehavior.SetNull);
+            entity.OwnsMany(r => r.ThresholdResults, results => results.ToJson());
         });
 
         modelBuilder.Entity<ExecutionResult>(entity =>

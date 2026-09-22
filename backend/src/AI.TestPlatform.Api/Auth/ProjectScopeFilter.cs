@@ -163,6 +163,10 @@ public sealed class ProjectScopeFilter : IEndpointFilter
             // 视觉 /cases/{testCaseId}
             case ProjectResource.VisualBaseline when ReadGuid(http.Request.RouteValues, TestCaseIdRouteKeys) is { } tcId2:
                 return await MapEntityToProjectAsync(ProjectResource.TestCase, tcId2, db, ct);
+            // 压测运行 /runs/{runId}：Run 上冗余了 ProjectId，一次索引命中即可
+            case ProjectResource.LoadTestScenario when ReadGuid(http.Request.RouteValues, RunIdRouteKeys) is { } runId:
+                return await db.LoadTestRuns.AsNoTracking().Where(r => r.Id == runId)
+                    .Select(r => (Guid?)r.ProjectId).FirstOrDefaultAsync(ct);
         }
         return null;
     }
@@ -199,12 +203,16 @@ public sealed class ProjectScopeFilter : IEndpointFilter
         ProjectResource.VisualBaseline => await db.VisualBaselines.AsNoTracking().Where(b => b.Id == id)
             .Join(db.TestCases, b => b.TestCaseId, t => t.Id, (b, t) => (Guid?)t.ProjectId)
             .FirstOrDefaultAsync(ct),
+        ProjectResource.LoadTestScenario => await db.LoadTestScenarios.AsNoTracking().Where(s => s.Id == id)
+            .Select(s => (Guid?)s.ProjectId).FirstOrDefaultAsync(ct),
         _ => null,
     };
 
     private static readonly string[] AttemptIdRouteKeys = ["attemptId"];
     private static readonly string[] RoundIdRouteKeys = ["roundId"];
     private static readonly string[] TestCaseIdRouteKeys = ["testCaseId"];
+    /// <summary>压测运行端点用 {runId}（/api/loadtests/runs/{runId}）</summary>
+    private static readonly string[] RunIdRouteKeys = ["runId"];
 
     /// <summary>在**已绑定**的处理器参数里找名为 <paramref name="propertyName"/> 的 Guid 属性值。</summary>
     private static Guid? FindArgGuid(EndpointFilterInvocationContext context, string propertyName)
@@ -280,6 +288,8 @@ public enum ProjectResource
     SharedStep = 11,
     /// <summary>视觉基线（/api/visual/baselines，经 TestCase 归属项目）</summary>
     VisualBaseline = 12,
+    /// <summary>压测场景（/api/loadtests，Run 上有冗余 ProjectId 可直接命中）</summary>
+    LoadTestScenario = 13,
 }
 
 /// <summary>端点元数据：声明该组按哪种资源反查项目 id。</summary>

@@ -65,7 +65,7 @@ import type { InputInstance } from 'element-plus'
 import {
   DataBoard, Folder, Document, VideoPlay, Timer, Collection, Grid, Picture,
   MagicStick, ChatDotRound, Connection, Setting, User, Lock, Memo, Calendar, WarningFilled,
-  Flag, Monitor, Expand, Fold, Search, Bell,
+  Flag, Monitor, Odometer, Expand, Fold, Search, Bell,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
@@ -117,6 +117,8 @@ const menus: MenuItem[] = [
   { path: '/projects', title: '项目管理', icon: Folder, permission: Permission.ViewProjects },
   { path: '/testcases', title: '测试用例', icon: Document, permission: Permission.ViewTestCases },
   { path: '/executions', title: '执行记录', icon: VideoPlay, permission: Permission.ViewExecutions },
+  // 压测场景紧跟执行记录：两者都是「跑起来看结果」的入口，放一起便于对照
+  { path: '/loadtests', title: '压测场景', icon: Odometer, permission: Permission.ViewLoadTests },
   { path: '/agent-approvals', title: 'Agent 审批', icon: MagicStick, permission: Permission.ManageTestCases },
   { path: '/nodes', title: '执行节点', icon: Monitor, permission: Permission.ViewExecutions },
   { path: '/schedules', title: '定时任务', icon: Timer, permission: Permission.ManageSchedules },

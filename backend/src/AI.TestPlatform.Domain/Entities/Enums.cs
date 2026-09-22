@@ -124,7 +124,7 @@ public enum UserRole
 /// 权限点（迭代 C）：位图，一个角色对应若干个权限位的并集。
 /// 权限写入 JWT 的 <c>perm</c> 声明（整数），服务端逐端点用 <see cref="Permission"/> 做按位与判断，
 /// 因此新增权限点只需在矩阵里补一行，不必逐个改策略定义。
-/// 上限 32 位（int），当前使用 13 位，余量充足。
+/// 上限 32 位（int），当前使用 18 位，余量充足。
 /// </summary>
 [Flags]
 public enum Permission
@@ -137,6 +137,7 @@ public enum Permission
     ViewExecutions  = 1 << 2,
     ViewReports     = 1 << 3,
     ViewTestPlans   = 1 << 14,
+    ViewLoadTests   = 1 << 16,
 
     // ---- 业务写入类（管理员 + 测试工程师）
     ManageProjects  = 1 << 4,
@@ -147,6 +148,8 @@ public enum Permission
     ManageSharedSteps = 1 << 9,
     // 编排测试计划是测试的日常工作，与 ManageTestCases 同级
     ManageTestPlans = 1 << 15,
+    // 压测能打垮共享环境，值得独立授权（而不是蹭 ManageTestCases）
+    ManageLoadTests = 1 << 17,
 
     // ---- 系统管理类（仅管理员）
     ManageSchedules = 1 << 10,
@@ -206,4 +209,15 @@ public enum AgentAttemptResult
     Rejected = 4,
     /// <summary>跳过（FixCategory 不可修复，或动作未通过安全校验）</summary>
     Skipped = 5,
+}
+
+/// <summary>
+/// 压测场景的用例来源（迭代 F·P2-9）。按 int 落库，只允许末尾追加。
+/// </summary>
+public enum LoadTestSource
+{
+    /// <summary>从平台已有的接口用例（TestType.Api）多选生成脚本</summary>
+    Cases = 0,
+    /// <summary>从导入的 OpenAPI/Swagger 文档选操作生成脚本</summary>
+    OpenApi = 1,
 }

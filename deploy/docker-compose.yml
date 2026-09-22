@@ -18,6 +18,41 @@
 # 容器之间走 compose 网络，用的是容器内端口（backend:8080 / aiworker:8000），
 # 因此改宿主机映射不影响服务间调用。
 
+# 控制面与执行面**共用**的后端环境（迭代 F·§3.8）。
+# backend（控制面）与 backend-worker（执行面）必须是同一份配置——两边各写一遍迟早分叉，
+# 而分叉的表现是「API 连得上库、worker 连不上」这种只在一边复现、极难定位的故障。
+x-backend-env: &backend-env
+  ASPNETCORE_ENVIRONMENT: Production
+  # __ 是 .NET 配置的分层分隔符：Jwt__Key → Jwt:Key
+  Jwt__Key: ${JWT_KEY:?必须在 .env 中配置 JWT_KEY（至少 32 字符）}
+  Jwt__Issuer: ${JWT_ISSUER:-ai-test-platform}
+  Jwt__Audience: ${JWT_AUDIENCE:-ai-test-platform}
+  ConnectionStrings__Default: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-ai_test};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+  Webhook__Token: ${WEBHOOK_TOKEN:?必须在 .env 中配置 WEBHOOK_TOKEN}
+  AllowedOrigins: ${ALLOWED_ORIGINS:-http://localhost:8088}
+  AIWorker__BaseUrl: http://aiworker:8000
+  # 服务间鉴权：与 aiworker 的 WORKER_TOKEN 同源（.env），两边不一致时后端调 Worker 全部 401
+  AIWorker__Token: ${WORKER_TOKEN:?必须在 .env 中配置 WORKER_TOKEN（与后端共享的服务间令牌）}
+  # 容器内没有桌面环境，录制器必须关闭（详见 backend/Dockerfile 注释）
+  Recorder__Enabled: "false"
+  # SignalR backplane：默认走上面的 redis；置空（SIGNALR_REDIS=""）退回进程内广播。
+  # ⚠ 拆分进程后这一项从"可选优化"变成"必需"：worker 进程的推送只有经 Redis
+  #   才能到达 API 进程上的浏览器连接，否则执行进度事件全部丢失。
+  SignalR__Redis: ${SIGNALR_REDIS:-redis:6379}
+  # 产物存储：默认 MinIO（多副本共享）；置 STORAGE_PROVIDER=local 可退回下面的本地卷。
+  # 启动时若 bucket 不存在会自动创建（Program.cs EnsureBucketAsync）
+  Storage__Provider: ${STORAGE_PROVIDER:-minio}
+  Storage__Minio__Endpoint: minio:9000
+  Storage__Minio__AccessKey: ${MINIO_ROOT_USER:-minioadmin}
+  Storage__Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  Storage__Minio__Bucket: ${MINIO_BUCKET:-aitest-artifacts}
+  Storage__Minio__Secure: "false"
+  # 压测（k6）默认关闭：部署机 4 vCPU / 3.7GB 与平台同机，压测是唯一能把整机打满的功能。
+  # 需要时用 LOADTEST_ENABLED=true 打开（打开前请确认是低峰期）。
+  LoadTest__Enabled: ${LOADTEST_ENABLED:-false}
+  LoadTest__K6Path: /usr/local/bin/k6
+  LoadTest__WorkPath: /app/loadtests
+
 services:
   postgres:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/pgvector/pgvector:pg18
@@ -96,6 +131,7 @@ services:
   backend:
     build:
       context: ./backend
+    image: aitest-backend:latest
     restart: unless-stopped
     depends_on:
       postgres:
@@ -107,29 +143,9 @@ services:
       minio:
         condition: service_healthy
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      # __ 是 .NET 配置的分层分隔符：Jwt__Key → Jwt:Key
-      Jwt__Key: ${JWT_KEY:?必须在 .env 中配置 JWT_KEY（至少 32 字符）}
-      Jwt__Issuer: ${JWT_ISSUER:-ai-test-platform}
-      Jwt__Audience: ${JWT_AUDIENCE:-ai-test-platform}
-      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-ai_test};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
-      Webhook__Token: ${WEBHOOK_TOKEN:?必须在 .env 中配置 WEBHOOK_TOKEN}
-      AllowedOrigins: ${ALLOWED_ORIGINS:-http://localhost:8088}
-      AIWorker__BaseUrl: http://aiworker:8000
-      # 服务间鉴权：与 aiworker 的 WORKER_TOKEN 同源（.env），两边不一致时后端调 Worker 全部 401
-      AIWorker__Token: ${WORKER_TOKEN:?必须在 .env 中配置 WORKER_TOKEN（与后端共享的服务间令牌）}
-      # 容器内没有桌面环境，录制器必须关闭（详见 backend/Dockerfile 注释）
-      Recorder__Enabled: "false"
-      # SignalR backplane：默认走上面的 redis；置空（SIGNALR_REDIS=""）退回进程内广播
-      SignalR__Redis: ${SIGNALR_REDIS:-redis:6379}
-      # 产物存储：默认 MinIO（多副本共享）；置 STORAGE_PROVIDER=local 可退回下面的本地卷。
-      # 启动时若 bucket 不存在会自动创建（Program.cs EnsureBucketAsync）
-      Storage__Provider: ${STORAGE_PROVIDER:-minio}
-      Storage__Minio__Endpoint: minio:9000
-      Storage__Minio__AccessKey: ${MINIO_ROOT_USER:-minioadmin}
-      Storage__Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      Storage__Minio__Bucket: ${MINIO_BUCKET:-aitest-artifacts}
-      Storage__Minio__Secure: "false"
+      <<: *backend-env
+      # 控制面 + 执行面同进程（默认，与拆分前行为完全一致）
+      Execution__Role: All
     volumes:
       # 执行产物持久化：仅在 STORAGE_PROVIDER=local 时使用（录制输出目录始终本地）
       - screenshots:/app/screenshots
@@ -141,6 +157,52 @@ services:
     #   （前端 nginx 走 compose 网络 DNS 轮询各副本），webhook 改经负载均衡进。
     ports:
       - "${BACKEND_API_PORT:-8002}:8080"
+
+  # 执行面独立进程（迭代 F·§3.8）：与控制面共用同一镜像与同一套环境，只改运行角色。
+  # 好处是执行负载可以独立扩缩容/重启，不再把 API 一起带走。
+  #
+  # 刻意放在 `worker` profile 下：默认 `docker compose up -d` **不会**拉起它。
+  # 部署机只有 4 vCPU / 3.7GB，多一份常驻 .NET 进程是实打实的开销，
+  # 必须由人显式开启：
+  #   docker compose --profile worker up -d backend-worker
+  #   docker compose --profile worker up -d --scale backend-worker=2   # 横向扩执行面
+  backend-worker:
+    profiles: ["worker"]
+    image: aitest-backend:latest
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      aiworker:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *backend-env
+      # 只跑执行面：不映射任何 HTTP 端点，Kestrel 退到随机回环端口
+      Execution__Role: WorkerOnly
+      # 节点名必须与 API 进程不同：ClaimedBy 前缀、节点看板、Mock 归属都依赖它。
+      # 多副本时用 --scale 会共用同一个名字，需配合 -e 或改这里为随机值。
+      Execution__NodeName: ${WORKER_NODE_NAME:-worker-1}
+    volumes:
+      - screenshots:/app/screenshots
+      - traces:/app/traces
+      - recordings:/app/recordings
+      - loadtest-work:/app/loadtests
+    # 刻意不发布任何端口：这个进程不对外提供服务。
+    # 健康检查也必须换掉：镜像自带的那个打的是 8080，而执行面绑的是**随机回环端口**
+    # （它不映射任何端点），沿用镜像的 HEALTHCHECK 会永远 unhealthy。
+    # 对这个进程来说「活着」就是全部含义，所以只检查进程存在。
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f AI.TestPlatform.Api > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
 
   frontend:
     build:
@@ -157,3 +219,4 @@ volumes:
   screenshots:
   traces:
   recordings:
+  loadtest-work:

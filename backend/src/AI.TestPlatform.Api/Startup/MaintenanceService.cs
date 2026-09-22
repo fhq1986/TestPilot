@@ -1,5 +1,6 @@
 using AI.TestPlatform.Api.Audit;
 using AI.TestPlatform.Api.Execution;
+using AI.TestPlatform.Api.LoadTesting;
 using AI.TestPlatform.Api.Modules.Artifacts;
 using AI.TestPlatform.Domain.Entities;
 using AI.TestPlatform.Infrastructure.Data;
@@ -98,6 +99,36 @@ public static class MaintenanceService
         await CleanupTracesAsync(services, options, logger);
         await CleanupVideosAsync(services, options, logger);
         await CleanupScreenshotsAsync(services, options, logger);
+        await CleanupLoadTestsAsync(services, logger);
+    }
+
+    /// <summary>
+    /// 清理超出保留期的压测产物（脚本/summary/日志，迭代 F·P2-9）。
+    ///
+    /// 与 trace / 录像同一套做法：**独立保留期 + 独立清理**，并在截图清理的排除列表里。
+    /// 否则会被截图清理按 90 天口径顺手删掉——两个任务管同一批文件、保留期口径还不一致，
+    /// 结果是"配了 30 天却按 90 天留"这种没人说得清的行为（traces/ 与 videos/ 都踩过）。
+    /// </summary>
+    private static async Task CleanupLoadTestsAsync(IServiceProvider services, ILogger logger)
+    {
+        var options = services.GetService<IOptions<LoadTestOptions>>()?.Value;
+        if (options is null || options.RetentionDays <= 0) return;
+        var store = services.GetService<IArtifactStore>();
+        if (store is null) return;
+
+        var cutoff = DateTime.UtcNow.AddDays(-options.RetentionDays);
+        try
+        {
+            var removed = await store.DeletePrefixOlderThanAsync(LoadTestStorage.Prefix, cutoff,
+                CancellationToken.None);
+            if (removed > 0)
+                logger.LogInformation("压测产物清理：删除 {Count} 个早于 {Cutoff:u} 的对象", removed, cutoff);
+        }
+        catch (Exception ex)
+        {
+            // 清理失败不该让整个维护任务失败：下次心跳还会再来
+            logger.LogWarning(ex, "压测产物清理失败");
+        }
     }
 
     /// <summary>
@@ -188,8 +219,14 @@ public static class MaintenanceService
         // 不是可再生的执行截图——按时间清掉等于把历史正文的图删空。
         // traces/ 与 videos/ 同样排除：它们各有自己的保留期（Trace/VideoRetentionDays），
         // 由专门的清理逻辑（连同数据库列置空）管理，不能在这里被按截图的口径顺手删掉。
+        // loadtests/ 同理（迭代 F·P2-9）：压测产物有自己的保留期，且体积比截图大得多，
+        // 混进来还会让"截图清理"的日志数字失真。
         var removed = await store.DeleteRootOlderThanAsync(cutoff,
-            new[] { "_baselines/", TraceStorage.Prefix, VideoStorage.Prefix, ArtifactApiExtensions.RichTextPrefix },
+            new[]
+            {
+                "_baselines/", TraceStorage.Prefix, VideoStorage.Prefix,
+                ArtifactApiExtensions.RichTextPrefix, LoadTestStorage.Prefix,
+            },
             CancellationToken.None);
         if (removed > 0)
             logger.LogInformation("截图清理：删除 {Count} 个早于 {Cutoff:u} 的截图对象", removed, cutoff);

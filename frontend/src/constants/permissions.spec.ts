@@ -24,6 +24,10 @@ describe('Permission 位图', () => {
     expect(Permission.ManageSettings).toBe(1 << 11)
     expect(Permission.ManageUsers).toBe(1 << 12)
     expect(Permission.ViewAuditLog).toBe(1 << 13)
+    expect(Permission.ViewTestPlans).toBe(1 << 14)
+    expect(Permission.ManageTestPlans).toBe(1 << 15)
+    expect(Permission.ViewLoadTests).toBe(1 << 16)
+    expect(Permission.ManageLoadTests).toBe(1 << 17)
   })
 
   it('权限点数量不超过 31（位图存 int，第 32 位会变负数）', () => {
@@ -37,28 +41,29 @@ describe('Permission 位图', () => {
   })
 
   it('内置角色的权限位图与后端 PermissionCatalog 一致', () => {
-    // 只读访客 = 5 个查看权限（含查看测试计划——计划与报告是验收材料，访客要能看）
+    // 只读访客 = 6 个查看权限（含查看测试计划——计划与报告是验收材料，访客要能看）
     const viewer =
       Permission.ViewProjects | Permission.ViewTestCases |
-      Permission.ViewExecutions | Permission.ViewReports | Permission.ViewTestPlans
-    expect(viewer).toBe(16399)
+      Permission.ViewExecutions | Permission.ViewReports | Permission.ViewTestPlans |
+      Permission.ViewLoadTests
+    expect(viewer).toBe(81935)
 
     // 测试工程师 = 访客 + 业务管理权限（不含系统管理）
     const tester = viewer | Permission.ManageProjects | Permission.ManageTestCases |
       Permission.RunExecutions | Permission.ManageDataSets | Permission.ManageBaselines |
-      Permission.ManageSharedSteps | Permission.ManageTestPlans
-    expect(tester).toBe(50175)
+      Permission.ManageSharedSteps | Permission.ManageTestPlans | Permission.ManageLoadTests
+    expect(tester).toBe(246783)
     expect(tester & Permission.ManageUsers).toBe(0)
     expect(tester & Permission.ManageSettings).toBe(0)
     expect(tester & Permission.ViewAuditLog).toBe(0)
 
-    // 超级管理员 = 全部 16 个权限点
+    // 超级管理员 = 全部 18 个权限点
     const all = Object.values(Permission).reduce((acc, v) => acc | v, 0)
-    expect(all).toBe(65535)
+    expect(all).toBe(262143)
 
     // 管理员 = 全集去掉「用户管理」与「系统设置」（这两块收归超级管理员）
     const admin = all & ~Permission.ManageUsers & ~Permission.ManageSettings
-    expect(admin).toBe(65535 - (1 << 12) - (1 << 11))
+    expect(admin).toBe(262143 - (1 << 12) - (1 << 11))
   })
 })
 

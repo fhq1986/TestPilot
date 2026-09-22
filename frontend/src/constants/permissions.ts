@@ -25,6 +25,8 @@ export const Permission = {
   ViewAuditLog: 1 << 13,
   ViewTestPlans: 1 << 14,
   ManageTestPlans: 1 << 15,
+  ViewLoadTests: 1 << 16,
+  ManageLoadTests: 1 << 17,
 } as const
 
 export type PermissionValue = (typeof Permission)[keyof typeof Permission]
@@ -47,6 +49,8 @@ export const PermissionLabels: Record<string, string> = {
   ViewAuditLog: '查看审计日志',
   ViewTestPlans: '查看测试计划',
   ManageTestPlans: '管理测试计划',
+  ViewLoadTests: '查看压测场景',
+  ManageLoadTests: '管理压测场景',
 }
 
 /** 判断权限位图是否满足所需权限（全部满足才算通过，与后端 `PermissionCatalog.Has` 同语义） */

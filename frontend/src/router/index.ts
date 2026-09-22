@@ -112,6 +112,26 @@ const router = createRouter({
           meta: { title: 'Agent 审批', permission: Permission.ManageTestCases },
         },
         {
+          path: 'loadtests',
+          name: 'loadtests',
+          component: () => import('@/views/loadtest/LoadTestListView.vue'),
+          meta: { title: '压测场景', permission: Permission.ViewLoadTests },
+        },
+        {
+          // 运行详情放在场景详情之前声明：三段路径不会与 :id 的两段路径冲突，
+          // 但按「更具体的在前」排能避免将来新增兄弟路由时被 :id 抢先匹配
+          path: 'loadtests/runs/:runId',
+          name: 'loadtest-run',
+          component: () => import('@/views/loadtest/LoadTestRunView.vue'),
+          meta: { title: '压测运行', permission: Permission.ViewLoadTests },
+        },
+        {
+          path: 'loadtests/:id',
+          name: 'loadtest-detail',
+          component: () => import('@/views/loadtest/LoadTestDetailView.vue'),
+          meta: { title: '压测场景详情', permission: Permission.ViewLoadTests },
+        },
+        {
           path: 'schedules',
           name: 'schedules',
           component: () => import('@/views/schedule/ScheduleListView.vue'),

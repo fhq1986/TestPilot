@@ -30,13 +30,30 @@ COPY . .
 RUN dotnet publish src/AI.TestPlatform.Api/AI.TestPlatform.Api.csproj \
     -c Release -o /app/publish --no-restore
 
+# ---------- k6 阶段（迭代 F·P2-9：压测执行器）----------
+# 只借用官方镜像里的 k6 二进制，而不是在构建期下载 release 包：
+# 镜像走已配置的国内 mirror，构建期不必访问 GitHub Releases（部署机实测极慢/超时）。
+# 与 ms-browsers/ 同一套思路——能从镜像拿的就别在构建期下。
+#
+# 用 :latest 而不是钉版本：mirror 上按版本号 tag 经常没有（0.54.0 就拉不到），
+# 钉一个拉不动的 tag 会直接把构建搞挂。代价是构建不可复现——若将来 mirror 支持按
+# digest 拉，建议改成 `grafana/k6@sha256:...` 兼顾两者。
+FROM docker.1ms.run/grafana/k6:latest AS k6
+# 用 `command -v` 定位而不是写死 /usr/bin/k6：官方镜像换过基础发行版（alpine/debian），
+# 二进制位置可能变。定死路径的话，一旦上游挪位置，构建会以「找不到文件」失败，
+# 而失败信息不会告诉你「其实是路径变了」。这里先归一到一个固定位置再 COPY。
+RUN cp "$(command -v k6)" /k6 && /k6 version
+
 # ---------- 运行阶段 ----------
 FROM ubuntu:24.04 AS runtime
 WORKDIR /app
 
-RUN mkdir -p /app/screenshots /app/traces /app/recordings
+RUN mkdir -p /app/screenshots /app/traces /app/recordings /app/loadtests
 
 COPY --from=build /app/publish ./
+
+# 压测执行器：k6 二进制（见上面的 k6 阶段，已归一为 /k6）
+COPY --from=k6 /k6 /usr/local/bin/k6
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
     DOTNET_ROOT=/usr/lib/dotnet \
@@ -45,7 +62,9 @@ ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
     Recorder__Enabled=false \
     Screenshots__Path=/app/screenshots \
     Execution__TracePath=/app/traces \
-    Recorder__Path=/app/recordings
+    Recorder__Path=/app/recordings \
+    LoadTest__K6Path=/usr/local/bin/k6 \
+    LoadTest__WorkPath=/app/loadtests
 
 # apt 源切腾讯云内网（mirrors.cloud.tencent.com 走内网秒级）。
 # aspnetcore-runtime-8.0：运行 API；Chromium 系统依赖来自 Ubuntu 官方仓库（等价于

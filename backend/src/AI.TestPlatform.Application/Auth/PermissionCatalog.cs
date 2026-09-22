@@ -20,7 +20,8 @@ public static class PermissionCatalog
         Permission.RunExecutions | Permission.ManageDataSets | Permission.ManageBaselines |
         Permission.ManageSharedSteps | Permission.ManageSchedules | Permission.ManageSettings |
         Permission.ManageUsers | Permission.ViewAuditLog |
-        Permission.ViewTestPlans | Permission.ManageTestPlans;
+        Permission.ViewTestPlans | Permission.ManageTestPlans |
+        Permission.ViewLoadTests | Permission.ManageLoadTests;
 
     /// <summary>
     /// 管理员权限：全集去掉「用户管理」与「系统设置」。
@@ -35,13 +36,15 @@ public static class PermissionCatalog
         Permission.ViewProjects | Permission.ViewTestCases |
         Permission.ViewExecutions | Permission.ViewReports |
         // 计划与报告是验收材料，访客要能看（但不能改）
-        Permission.ViewTestPlans;
+        Permission.ViewTestPlans |
+        // 压测结果同样是验收材料，访客能看不能跑
+        Permission.ViewLoadTests;
 
     /// <summary>测试工程师可用权限（在访客基础上叠加日常测试工作所需的写权限）</summary>
     public const Permission TesterPermissions = ViewerPermissions |
         Permission.ManageProjects | Permission.ManageTestCases | Permission.RunExecutions |
         Permission.ManageDataSets | Permission.ManageBaselines | Permission.ManageSharedSteps |
-        Permission.ManageTestPlans;
+        Permission.ManageTestPlans | Permission.ManageLoadTests;
 
     private static readonly IReadOnlyDictionary<UserRole, Permission> Matrix =
         new Dictionary<UserRole, Permission>
@@ -94,6 +97,8 @@ public static class PermissionCatalog
         Permission.ManageSharedSteps => "管理共享步骤",
         Permission.ViewTestPlans => "查看测试计划",
         Permission.ManageTestPlans => "管理测试计划",
+        Permission.ViewLoadTests => "查看压测场景",
+        Permission.ManageLoadTests => "管理压测场景",
         Permission.ManageSchedules => "管理定时任务",
         Permission.ManageSettings => "管理系统设置",
         Permission.ManageUsers => "管理用户",
