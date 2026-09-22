@@ -15,10 +15,12 @@
  * 用法：
  *   node scripts/validate-api-responses.mjs
  *   SWAGGER_URL=http://127.0.0.1:5199/swagger/v1/swagger.json node scripts/validate-api-responses.mjs
+ *   SEED=1 node scripts/validate-api-responses.mjs        # 空库上先造临时数据再校（见下）
  *
  * 环境变量：
  *   SWAGGER_URL / SWAGGER_FILE  契约来源（同 gen-api-types.mjs）
  *   API_USER / API_PASSWORD     登录账号，默认 superadmin / super@135246（本地种子账号）
+ *   SEED=1                      缺数据的 fixture 先造出来，跑完删掉（CI 用；默认关闭）
  *   STRICT=1                    把「跳过」也视为失败（用于要求全覆盖的场景）
  */
 import { readFile } from 'node:fs/promises'
@@ -29,6 +31,7 @@ const swaggerUrl = process.env.SWAGGER_URL ?? 'http://localhost:8088/swagger/v1/
 const apiUser = process.env.API_USER ?? 'superadmin'
 const apiPassword = process.env.API_PASSWORD ?? 'super@135246'
 const strict = process.env.STRICT === '1'
+const seed = process.env.SEED === '1'
 
 // ---------------------------------------------------------------- 契约加载
 
@@ -134,19 +137,44 @@ function apiBaseOf(url) {
 const apiBase = apiBaseOf(swaggerUrl)
 let token = ''
 
-async function call(method, path, { body } = {}) {
-  const res = await fetch(apiBase + path, {
-    method,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  const text = await res.text()
-  let json
-  try { json = text ? JSON.parse(text) : undefined } catch { json = undefined }
-  return { status: res.status, json, text }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * 撞上平台限流时等一个窗口再试。
+ *
+ * 本脚本一次跑要发 80+ 个请求，而全局限流是「按用户 100 次/分钟」的固定窗口——
+ * 正常跑就在阈值边缘，CI 上并发或重跑必然踩到。踩到之后如果按「非 200 → 跳过」处理，
+ * 门禁会**静默降级**成「大部分端点没校」，比直接报错更糟。所以这里显式重试；
+ * 重试仍失败则原样把 429 返回给调用方，由它记为失败。
+ */
+const RETRY_ON_429 = 4
+
+async function call(method, path, { body, retry429 = true } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(apiBase + path, {
+      method,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+
+    if (res.status === 429 && retry429 && attempt < RETRY_ON_429) {
+      // Retry-After 是秒；固定窗口限流器会给。给不出就等 10s 再探
+      const after = Number(res.headers.get('retry-after'))
+      const waitMs = (Number.isFinite(after) && after > 0 ? after : 10) * 1000
+      await res.text()
+      console.warn(`  · 被限流，等待 ${Math.round(waitMs / 1000)}s 后重试（第 ${attempt + 1} 次）`)
+      await sleep(waitMs)
+      continue
+    }
+
+    const text = await res.text()
+    let json
+    try { json = text ? JSON.parse(text) : undefined } catch { json = undefined }
+    return { status: res.status, json, text, location: res.headers.get('location') }
+  }
 }
 
 // ---------------------------------------------------------------- 待校验端点
@@ -293,40 +321,237 @@ for (const [p, key] of seeds) {
   ctx[key] = res.status === 200 ? firstId(res) : undefined
 }
 
+// ---------------------------------------------------------------- 造数（SEED=1）
+
+/**
+ * 详情类端点拿不到 id 就只能整批跳过，而 CI 跑的正是**空库**（后端种子只建账号，
+ * 不建任何业务数据）。结果是「门禁跑过了」，实际只校了一小半端点——比不跑更危险，
+ * 因为它给出的是虚假的安全感。
+ *
+ * 所以给一个显式开关：SEED=1 时先把缺的 fixture 造出来，跑完在 finally 里删掉。
+ * 默认关闭——脚本对生产/共享环境的「只读」承诺不能因为图省事就破掉。
+ *
+ * 造数顺序即依赖顺序（项目 → 用例 → 计划/套件/定时/需求/缺陷/数据集/共享步骤）。
+ */
+const FIXTURE = '[契约校验]临时'
+const created = []
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 各模块的创建响应形态不统一：多数回 `{ id: ... }`，有的只回一个裸 GUID 字符串
+ * （如测试计划），还有的靠 Location 头。三种都认，免得每加一个 fixture 就踩一次。
+ */
+function pickId(res) {
+  if (typeof res.json === 'string' && GUID.test(res.json)) return res.json
+  if (res.json && typeof res.json === 'object') {
+    if (GUID.test(res.json.id ?? '')) return res.json.id
+    if (GUID.test(res.json.Id ?? '')) return res.json.Id
+  }
+  const tail = res.location?.split('/').filter(Boolean).pop()
+  return tail && GUID.test(tail) ? tail : undefined
+}
+
+/**
+ * `cleanup(id)` 返回 `{ method, path, body? }`，默认 DELETE。
+ * 不做成固定 DELETE：删除路由各模块并不统一（测试计划就没有 DELETE，只有 batch-delete）。
+ */
+async function createFixture(label, path, body, cleanup) {
+  const res = await call('POST', path, { body })
+  if (res.status !== 200 && res.status !== 201) {
+    throw new Error(`${label} 造数失败：HTTP ${res.status} ${res.text.slice(0, 300)}`)
+  }
+  const id = pickId(res)
+  if (!id) throw new Error(`${label} 造数成功但拿不到 id：${res.text.slice(0, 300)}`)
+  created.push({
+    label,
+    cleanup: () => {
+      const c = cleanup(id)
+      return call(c.method ?? 'DELETE', c.path, c.body ? { body: c.body } : {})
+    },
+  })
+  return id
+}
+
+/** 反序清理（后建的先删，避免外键挡住）。清理失败只告警——不能让它盖掉校验结论 */
+async function cleanupFixtures() {
+  for (const item of [...created].reverse()) {
+    try {
+      const res = await item.cleanup()
+      if (res.status !== 200 && res.status !== 204) {
+        console.warn(`  ! 清理${item.label}失败：HTTP ${res.status}`)
+      }
+    } catch (e) {
+      console.warn(`  ! 清理${item.label}异常：${e.message}`)
+    }
+  }
+}
+
+async function seedMissingFixtures() {
+  // 项目：空库上什么都没有，而绝大部分端点都是项目作用域的
+  if (!ctx.projectId) {
+    ctx.projectId = await createFixture('项目', '/api/projects',
+      { name: `${FIXTURE}项目`, description: '契约校验用临时数据，可安全删除' },
+      (id) => ({ path: `/api/projects/${id}` }))
+  }
+
+  // 用例：带一个 Request 步骤。空用例也能过 schema 校验，但 steps[].config.selector
+  // 这类「可空对象」的校验点就测不到了——那正是最容易出错的地方，所以造一个真实步骤。
+  if (!ctx.testCaseId) {
+    ctx.testCaseId = await createFixture('用例', '/api/testcases', {
+      projectId: ctx.projectId,
+      name: `${FIXTURE}用例`,
+      type: 1,                                   // TestType.Api
+      description: '契约校验用临时数据',
+      browser: null,
+      timeout: 30000,                            // 校验要求 1000–600000 毫秒
+      retryCount: 0,
+      baseUrl: 'http://127.0.0.1:1',
+      steps: [{
+        stepOrder: 0,
+        actionType: 6,                           // ActionType.Request
+        config: { method: 'GET', endpoint: '/health' },
+        aiInstruction: null,
+        aiElementDescription: null,
+      }],
+    }, (id) => ({ path: `/api/testcases/${id}` }))
+  }
+
+  if (!ctx.planId) {
+    ctx.planId = await createFixture('测试计划', '/api/test-plans',
+      { projectId: ctx.projectId, name: `${FIXTURE}计划`, description: '契约校验用临时数据' },
+      // 测试计划没有 DELETE /{id}，只有 batch-delete
+      (id) => ({ method: 'POST', path: '/api/test-plans/batch-delete', body: { ids: [id] } }))
+  }
+
+  if (!ctx.suiteId) {
+    ctx.suiteId = await createFixture('套件', '/api/suites', {
+      projectId: ctx.projectId,
+      name: `${FIXTURE}套件`,
+      description: '契约校验用临时数据',
+      kind: 0,                                   // SuiteKind.Smoke
+      environmentId: null,
+      cases: [],
+    }, (id) => ({ path: `/api/suites/${id}` }))
+  }
+
+  if (!ctx.scheduleId) {
+    ctx.scheduleId = await createFixture('定时任务', '/api/schedules', {
+      projectId: ctx.projectId,
+      name: `${FIXTURE}定时`,
+      cronExpression: '0 2 * * *',               // 5 段格式（不是 Quartz 的 6 段）
+      enabled: false,                            // 别真的把它跑起来
+      module: null,
+      priority: null,
+      testCaseIds: [],
+      environmentId: null,
+    }, (id) => ({ path: `/api/schedules/${id}` }))
+  }
+
+  if (!ctx.requirementId) {
+    ctx.requirementId = await createFixture('需求', '/api/requirements',
+      { projectId: ctx.projectId, title: `${FIXTURE}需求`, description: '契约校验用临时数据' },
+      (id) => ({ path: `/api/requirements/${id}` }))
+  }
+
+  if (!ctx.defectId) {
+    ctx.defectId = await createFixture('缺陷', '/api/defects', {
+      projectId: ctx.projectId,
+      title: `${FIXTURE}缺陷`,
+      description: '契约校验用临时数据',
+      severity: 0,                               // DefectSeverity.Suggestion
+      assignedToId: null,
+      externalRef: null,
+    }, (id) => ({ path: `/api/defects/${id}` }))
+  }
+
+  if (!ctx.dataSetId) {
+    ctx.dataSetId = await createFixture('数据集', '/api/datasets', {
+      projectId: ctx.projectId,
+      name: `${FIXTURE}数据集`,
+      description: '契约校验用临时数据',
+      columns: ['账号'],
+      rows: [{ 账号: 'demo' }],
+    }, (id) => ({ path: `/api/datasets/${id}` }))
+  }
+
+  if (!ctx.sharedStepId) {
+    ctx.sharedStepId = await createFixture('共享步骤组', '/api/shared-steps', {
+      projectId: ctx.projectId,
+      name: `${FIXTURE}共享步骤`,
+      description: '契约校验用临时数据',
+      items: [{
+        stepOrder: 0,
+        actionType: 6,                           // ActionType.Request
+        config: { method: 'GET', endpoint: '/health' },
+        aiInstruction: null,
+        aiElementDescription: null,
+      }],
+      variables: [],
+    }, (id) => ({ path: `/api/shared-steps/${id}` }))
+  }
+
+  // executionId 刻意不造：执行记录只能由「真的跑一条用例」产生，需要可达的靶站。
+  // 空库上它必然跳过，这一点在报告里会明确写出来，不用一个假记录去糊弄。
+}
+
+if (seed) {
+  try {
+    await seedMissingFixtures()
+    console.log(`造数：新建 ${created.length} 条临时数据（跑完会删除）`)
+  } catch (e) {
+    console.error(`✗ 造数失败：${e.message}`)
+    await cleanupFixtures()
+    process.exit(2)
+  }
+}
+
 const validated = []
 const skipped = []
 const failures = []
 
-for (const ep of endpoints(ctx)) {
-  if (ep.id === undefined && ep.path.includes('{id}')) {
-    skipped.push({ path: ep.path, why: '无可用 id（库中无数据）' })
-    continue
-  }
-  const url = ep.path.replace('{id}', ep.id) + (ep.query ?? '')
+try {
+  for (const ep of endpoints(ctx)) {
+    if (ep.id === undefined && ep.path.includes('{id}')) {
+      skipped.push({ path: ep.path, why: '无可用 id（库中无数据；加 SEED=1 可自动造）' })
+      continue
+    }
+    const url = ep.path.replace('{id}', ep.id) + (ep.query ?? '')
 
-  // 从 swagger 里取该端点的 200 响应 schema
-  const op = getOperations.get(normalizePathTemplate(ep.path))
-  const respSchema = op?.responses?.['200']?.content?.['application/json']?.schema
-  if (!respSchema) {
-    skipped.push({ path: url, why: 'Swagger 未声明响应 schema（端点缺 .Produces<T>()）' })
-    continue
-  }
+    // 从 swagger 里取该端点的 200 响应 schema
+    const op = getOperations.get(normalizePathTemplate(ep.path))
+    const respSchema = op?.responses?.['200']?.content?.['application/json']?.schema
+    if (!respSchema) {
+      skipped.push({ path: url, why: 'Swagger 未声明响应 schema（端点缺 .Produces<T>()）' })
+      continue
+    }
 
-  const res = await call('GET', url)
-  if (res.status !== 200) {
-    skipped.push({ path: url, why: `HTTP ${res.status}` })
-    continue
-  }
+    const res = await call('GET', url)
+    if (res.status === 429) {
+      // 「没能校验」不等于「没问题」：算失败，否则限流会把门禁悄悄变成空跑
+      failures.push({
+        path: url,
+        errors: [`HTTP 429：重试 ${RETRY_ON_429} 次后仍被限流，本次未能校验（不算通过）`],
+      })
+      continue
+    }
+    if (res.status !== 200) {
+      skipped.push({ path: url, why: `HTTP ${res.status}` })
+      continue
+    }
 
-  const validate = ajv.compile(normalize(respSchema))
-  if (validate(res.json)) {
-    validated.push(url)
-  } else {
-    failures.push({
-      path: url,
-      errors: (validate.errors ?? []).slice(0, 5).map((e) => `${e.instancePath || '/'} ${e.message}`),
-    })
+    const validate = ajv.compile(normalize(respSchema))
+    if (validate(res.json)) {
+      validated.push(url)
+    } else {
+      failures.push({
+        path: url,
+        errors: (validate.errors ?? []).slice(0, 5).map((e) => `${e.instancePath || '/'} ${e.message}`),
+      })
+    }
   }
+} finally {
+  if (seed) await cleanupFixtures()
 }
 
 // ---------------------------------------------------------------- 报告

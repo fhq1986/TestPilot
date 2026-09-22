@@ -97,6 +97,11 @@ jobs:
 
       - name: 校验响应结构
         working-directory: frontend
+        # SEED=1：这个 job 用的是刚迁移完的空库（后端种子只建账号，不建业务数据），
+        # 不造数的话详情类端点会整批「跳过」，门禁看着绿其实只校了一小半。
+        # 造出来的数据跑完即删；对生产/共享环境跑时不要加这个开关。
+        env:
+          SEED: '1'
         run: npm run api:responses:check
 
       - name: 后端启动日志（失败时定位用）
