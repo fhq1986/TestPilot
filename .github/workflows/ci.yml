@@ -4,10 +4,12 @@ name: CI 门禁
 # 此前 scripts/coverage.sh（单测 + 覆盖率棘轮）与前端 type-check/vitest 都只是本地脚本，
 # 没有任何地方强制跑 —— 门禁形同虚设。这里补上。
 #
-# 刻意**不跑集成测试**：它需要 Postgres，且当前有 14 个存量失败（见
-# docs/integration-test-hang-diagnosis.md），设成阻塞会从第一天起就是红的。
-# 待那些失败修完后，复用 contract-drift.yml 的 pgvector service +
-# TEST_PG_CONNECTION（绕开 Testcontainers）再接进来。
+# 刻意**暂不跑集成测试**：它需要 Postgres，且要真实跑通还得装 Playwright 浏览器
+# （有 8 个浏览器用例）。存量失败已清零（2026-09-23 本地 80/80，见
+# docs/integration-test-hang-diagnosis.md），要接进来就复用 contract-drift.yml 的
+# pgvector service + TEST_PG_CONNECTION（绕开 Testcontainers），并补 playwright 安装步骤。
+# 注意测试库必须「出生即带 vector 扩展」：TestApiFactory 用 TEMPLATE 建库来保证，
+# 直接给一个空库会让驱动类型目录定格、向量列读写全废（详见该文件注释）。
 on:
   push:
     branches: [main, master]
