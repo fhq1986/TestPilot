@@ -342,6 +342,26 @@ public static class ExecutionApiExtensions
                 })
                 .FirstOrDefaultAsync(ct);
 
+            // 防重复应用：同一用例若已采纳过**完全相同**的动作，再应用一次会把步骤插两遍
+            // （add_step 不是幂等操作）。列表侧已按用例收敛待办，这里是兜底——
+            // 直接调 API、或两条待办被先后采纳时仍可能撞上。
+            if (ctx?.TestCaseId is { } guardCid && !string.IsNullOrWhiteSpace(attempt.ProposedFixes))
+            {
+                var appliedBefore = await db.AgentAttempts.AsNoTracking()
+                    .Where(a => a.Id != attemptId && a.Persisted && a.ProposedFixes != null
+                        && a.Execution != null && a.Execution.TestCaseId == guardCid)
+                    .Select(a => a.ProposedFixes!)
+                    .ToListAsync(ct);
+                if (appliedBefore.Contains(attempt.ProposedFixes))
+                {
+                    // 标记为已被取代而不是留在待审批里：这条已无事可做，
+                    // 留着只会让人再点一次。Approved 保持 null（无人工结论）。
+                    attempt.Result = AgentAttemptResult.Superseded;
+                    await db.SaveChangesAsync(ct);
+                    return Results.Ok(new { applied = 0, rejected = Array.Empty<object>(), duplicate = true });
+                }
+            }
+
             var applied = 0;
             var rejected = new List<AgentFixPersister.RejectedFix>();
             if (ctx?.TestCaseId is { } cid && fixes.Count > 0)
@@ -395,11 +415,15 @@ public static class ExecutionApiExtensions
             pageSize = pageSize is < 1 ? 20 : pageSize > 100 ? 100 : pageSize;
 
             var q = db.AgentAttempts.AsNoTracking().Where(a => a.NeedsApproval);
+            // 三个 tab 是「人工决定的状态」：
+            // - 待审批 = 未决（Approved 为 null）且**未**被新建议取代
+            // - 已被取代的旧建议归入「已拒绝」侧（它同样是"没被采纳"），但 Approved 保持 null——
+            //   该字段的语义是"人工结论"，系统作废不该冒充人工拒绝
             q = status?.Trim().ToLowerInvariant() switch
             {
-                "pending" => q.Where(a => a.Approved == null),
+                "pending" => q.Where(a => a.Approved == null && a.Result != AgentAttemptResult.Superseded),
                 "approved" => q.Where(a => a.Approved == true),
-                "rejected" => q.Where(a => a.Approved == false),
+                "rejected" => q.Where(a => a.Approved == false || a.Result == AgentAttemptResult.Superseded),
                 _ => q,
             };
 

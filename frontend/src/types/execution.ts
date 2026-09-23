@@ -179,6 +179,9 @@ export interface AgentApprovalItem {
   createdAt: string
 }
 
+/** AgentAttemptResult.Superseded：被更新的建议取代（后端枚举末尾追加，前端只读） */
+export const AGENT_ATTEMPT_RESULT_SUPERSEDED = 6
+
 /** AgentAttemptResult 文案（与后端枚举数值一致，只能追加） */
 export const AGENT_ATTEMPT_RESULT_LABELS: Record<number, string> = {
   0: '已修复',
@@ -187,13 +190,14 @@ export const AGENT_ATTEMPT_RESULT_LABELS: Record<number, string> = {
   3: '预算耗尽',
   4: '人工拒绝',
   5: '跳过',
+  6: '已被取代',
 }
 
 /** 尝试结果对应的标签配色 */
 export const agentAttemptResultTagType = (
   value: number,
 ): 'success' | 'danger' | 'warning' | 'info' =>
-  (({ 0: 'success', 1: 'warning', 2: 'danger', 3: 'warning', 4: 'info', 5: 'info' } as Record<
+  (({ 0: 'success', 1: 'warning', 2: 'danger', 3: 'warning', 4: 'info', 5: 'info', 6: 'info' } as Record<
     number,
     string
   >)[value] ?? 'info') as 'success' | 'danger' | 'warning' | 'info'

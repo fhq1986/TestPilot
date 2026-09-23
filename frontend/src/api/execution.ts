@@ -54,7 +54,7 @@ export interface RejectedAgentFix {
 
 /** 采纳一次待审批修复（应用到真实用例步骤） */
 export const approveAgentAttempt = (attemptId: string) =>
-  request.post<unknown, { applied: number; rejected: RejectedAgentFix[] }>(
+  request.post<unknown, { applied: number; rejected: RejectedAgentFix[]; duplicate?: boolean }>(
     `/executions/agent-attempts/${attemptId}/approve`,
   )
 

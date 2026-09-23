@@ -209,6 +209,10 @@ public class AgentLoopService
                 record.NeedsApproval = true;
                 record.Result = AgentAttemptResult.Skipped;
                 record.CompletedAt = DateTime.UtcNow;
+                // 同一用例只留最新一条待审批：旧建议已被这次更完整的分析取代，
+                // 而"多条待审批"会让人对着同一个用例反复采纳（payload 相同时会把步骤插两遍）。
+                // 只标记不删除——每条都还是一次真实的自愈尝试，轨迹要留。
+                await AgentApprovalQueue.SupersedePendingAsync(_db, testCase.Id, record.Id, ct);
                 pendingApprovals.Add(record);
                 break;
             }

@@ -209,6 +209,10 @@ public enum AgentAttemptResult
     Rejected = 4,
     /// <summary>跳过（FixCategory 不可修复，或动作未通过安全校验）</summary>
     Skipped = 5,
+
+    /// <summary>被更新的建议取代：同一用例又出现了一条更新的待审批建议，旧的这条自动作废。
+    /// 只标记不删除——它仍是一次真实的自愈尝试，轨迹要留。</summary>
+    Superseded = 6,
 }
 
 /// <summary>

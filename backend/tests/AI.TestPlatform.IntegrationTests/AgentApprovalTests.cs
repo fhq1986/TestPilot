@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using AI.TestPlatform.Api.AI;
+using AI.TestPlatform.Application.Common;
+using AI.TestPlatform.Application.Executions;
 using AI.TestPlatform.Application.Projects;
 using AI.TestPlatform.Application.TestCases;
 using AI.TestPlatform.Domain.Entities;
@@ -10,12 +13,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AI.TestPlatform.IntegrationTests;
 
 /// <summary>
-/// Agent 审批「采纳」的落库闭环（M8）。
+/// Agent 审批闭环（M8）：采纳落库 + 待办去重。
 ///
 /// 线上故障：点采纳提示成功，用例步骤却毫无变化。两个原因叠在一起——
 /// 端点读了恒为空的 AppliedActions，且 add_step 只改内存 List 没进 EF 追踪。
 /// 单测覆盖了差集/排序逻辑，这里补的是**最后一段 EF 落库**：没有它就无法证明
 /// 「采纳后步骤真的进库」，而这正是用户看到的那个现象。
+///
+/// 同一用例反复失败会攒出多条内容相似的待审批建议，所以还要钉住：
+/// 新建议只作废**同一用例**的旧待审批（join 写错会误伤别的用例）、
+/// 已被取代的记录离开待审批列表、重复采纳相同 payload 被拦下（add_step 不幂等）。
 /// </summary>
 [Collection("api")]
 public class AgentApprovalTests
@@ -24,7 +31,7 @@ public class AgentApprovalTests
 
     public AgentApprovalTests(TestApiFactory factory) => _factory = factory;
 
-    private sealed record ApproveResult(int Applied, List<RejectedFixDto> Rejected);
+    private sealed record ApproveResult(int Applied, List<RejectedFixDto> Rejected, bool? Duplicate = null);
     private sealed record RejectedFixDto(string ActionType, string Reason);
 
     /// <summary>线上真实提议：4 个 add_step（登录前置）。position 是字符串、Wait 用 timeout_ms。</summary>
@@ -109,6 +116,94 @@ public class AgentApprovalTests
         Assert.False(attempt.Persisted);
     }
 
+    [Fact]
+    public async Task 新建议只作废同一用例的旧待审批且不动其他用例()
+    {
+        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var project = await CreateProjectAsync(client);
+        var caseA = await CreateCaseAsync(client, project.Id);
+        var caseB = await CreateCaseAsync(client, project.Id);
+
+        // A 有两条待审批；B 有一条待审批 + 一条已人工批准（历史决定不该被翻案）
+        var a1 = await SeedPendingAttemptAsync(caseA.Id, RealProposedFixes);
+        var a2 = await SeedPendingAttemptAsync(caseA.Id, RealProposedFixes);
+        var b1 = await SeedPendingAttemptAsync(caseB.Id, RealProposedFixes);
+        var b2 = await SeedPendingAttemptAsync(caseB.Id, RealProposedFixes);
+        await MarkApprovedAsync(b2);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var superseded = await AgentApprovalQueue.SupersedePendingAsync(db, caseA.Id, Guid.NewGuid(), CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, superseded);
+        var after = await db.AgentAttempts.AsNoTracking().ToDictionaryAsync(a => a.Id, a => a.Result);
+        Assert.Equal(AgentAttemptResult.Superseded, after[a1]);
+        Assert.Equal(AgentAttemptResult.Superseded, after[a2]);
+        // 关键：join 写错会误伤别的用例，这两条必须原样
+        Assert.Equal(AgentAttemptResult.Skipped, after[b1]);
+        Assert.Equal(AgentAttemptResult.Skipped, after[b2]);
+    }
+
+    [Fact]
+    public async Task 已被取代的记录离开待审批列表并出现在已拒绝侧()
+    {
+        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var project = await CreateProjectAsync(client);
+        var testCase = await CreateCaseAsync(client, project.Id);
+        var stale = await SeedPendingAttemptAsync(testCase.Id, RealProposedFixes);
+        var fresh = await SeedPendingAttemptAsync(testCase.Id, RealProposedFixes);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+            await AgentApprovalQueue.SupersedePendingAsync(db, testCase.Id, fresh, CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
+
+        var pending = await FetchApprovalsAsync(client, "pending");
+        Assert.Contains(pending, i => i.AttemptId == fresh);
+        Assert.DoesNotContain(pending, i => i.AttemptId == stale);
+
+        // 已被取代仍要查得到（轨迹不丢），归到"没被采纳"的那一侧
+        var rejected = await FetchApprovalsAsync(client, "rejected");
+        Assert.Contains(rejected, i => i.AttemptId == stale);
+    }
+
+    [Fact]
+    public async Task 重复采纳完全相同的建议被拦下且不重复插步骤()
+    {
+        var client = await TestClientHelper.CreateAuthenticatedAsync(_factory);
+        var project = await CreateProjectAsync(client);
+        var testCase = await CreateCaseAsync(client, project.Id);
+
+        // 第一条正常采纳 → 步骤 3 → 7
+        var first = await SeedPendingAttemptAsync(testCase.Id, RealProposedFixes);
+        var firstResp = await client.PostAsync($"/api/executions/agent-attempts/{first}/approve", null);
+        var firstResult = await firstResp.Content.ReadFromJsonAsync<ApproveResult>();
+        Assert.Equal(4, firstResult!.Applied);
+        Assert.Null(firstResult.Duplicate);
+
+        // 第二条 payload 完全相同：add_step 不幂等，再应用一次会把登录步骤插两遍
+        var second = await SeedPendingAttemptAsync(testCase.Id, RealProposedFixes);
+        var secondResp = await client.PostAsync($"/api/executions/agent-attempts/{second}/approve", null);
+        var secondResult = await secondResp.Content.ReadFromJsonAsync<ApproveResult>();
+
+        Assert.True(secondResult!.Duplicate);
+        Assert.Equal(0, secondResult.Applied);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var steps = await db.TestSteps.AsNoTracking()
+            .Where(s => s.TestCaseId == testCase.Id).ToListAsync();
+        Assert.Equal(7, steps.Count);
+
+        // 被拦下的那条不留成"待审批僵尸"：标记为已被取代，列表里不再出现
+        var attempt = await db.AgentAttempts.AsNoTracking().SingleAsync(a => a.Id == second);
+        Assert.Equal(AgentAttemptResult.Superseded, attempt.Result);
+        Assert.Null(attempt.Approved);
+    }
+
     // ------------------------------------------------------------------ 辅助
 
     private static async Task<ProjectDto> CreateProjectAsync(HttpClient client)
@@ -176,5 +271,24 @@ public class AgentApprovalTests
         db.AgentAttempts.Add(attempt);
         await db.SaveChangesAsync();
         return attempt.Id;
+    }
+
+    /// <summary>把一条 attempt 标成「已人工批准」，用于验证历史决定不被后续建议翻案。</summary>
+    private async Task MarkApprovedAsync(Guid attemptId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        var attempt = await db.AgentAttempts.SingleAsync(a => a.Id == attemptId);
+        attempt.Approved = true;
+        attempt.ApprovedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<List<AgentApprovalItemDto>> FetchApprovalsAsync(HttpClient client, string status)
+    {
+        var res = await client.GetAsync($"/api/executions/agent-approvals?status={status}&pageSize=100");
+        res.EnsureSuccessStatusCode();
+        var page = await res.Content.ReadFromJsonAsync<PagedResult<AgentApprovalItemDto>>();
+        return page!.Items.ToList();
     }
 }

@@ -92,7 +92,7 @@
                   @click="approve(row)">采纳</el-button>
                 <el-button size="small" :loading="acting === row.attemptId" @click="reject(row)">驳回</el-button>
               </template>
-              <span v-else class="muted">{{ row.approved ? '已批准' : '已拒绝' }}</span>
+              <span v-else class="muted">{{ decisionText(row) }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -114,8 +114,8 @@ import {
   approveAgentAttempt, getAgentApprovals, getAgentHealMetrics, rejectAgentAttempt,
 } from '@/api/execution'
 import {
-  AGENT_ATTEMPT_RESULT_LABELS, FIX_CATEGORY_LABELS, agentAttemptResultTagType,
-  type AgentApprovalItem, type AgentHealMetrics,
+  AGENT_ATTEMPT_RESULT_LABELS, AGENT_ATTEMPT_RESULT_SUPERSEDED, FIX_CATEGORY_LABELS,
+  agentAttemptResultTagType, type AgentApprovalItem, type AgentHealMetrics,
 } from '@/types/execution'
 import { formatDateTime } from '@/utils/formatter'
 
@@ -216,6 +216,17 @@ const openExecution = (id: string) => router.push(`/executions/${id}`)
 /** 审批时间列名随 tab 走：一个 attempt 只会被批准或拒绝其中之一，不需要两列 */
 const approvalTimeLabel = computed(() => (activeTab.value === 'approved' ? '批准时间' : '拒绝时间'))
 
+/**
+ * 已决行的结论文案。已被取代的走系统作废，不是人工拒绝——
+ * Approved 此时仍是 null（后端刻意不冒充人工结论），只看 approved 会误显示成「已拒绝」。
+ */
+const decisionText = (row: AgentApprovalItem) =>
+  row.result === AGENT_ATTEMPT_RESULT_SUPERSEDED
+    ? '已被取代'
+    : row.approved
+      ? '已批准'
+      : '已拒绝'
+
 const approve = async (row: AgentApprovalItem) => {
   const confirmed = await ElMessageBox.confirm(
     `将把该修复应用到真实用例步骤，请确认：\n${row.fixSummary || '（无描述）'}`,
@@ -228,7 +239,10 @@ const approve = async (row: AgentApprovalItem) => {
     const res = await approveAgentAttempt(row.attemptId)
     const applied = res?.applied ?? 0
     const rejected = res?.rejected ?? []
-    if (applied > 0 && rejected.length === 0) {
+    if (res?.duplicate) {
+      // 同一用例已采纳过完全相同的动作：再应用会把步骤插两遍，后端已拦下并作废本条
+      ElMessage.info('该建议已应用过（用例已有相同改动），本条已标记为「已被取代」')
+    } else if (applied > 0 && rejected.length === 0) {
       ElMessage.success(`已采纳并应用到 ${applied} 个步骤`)
     } else if (applied > 0) {
       // 部分成功必须说清楚：被拒的动作没进用例，用户需要知道差在哪
