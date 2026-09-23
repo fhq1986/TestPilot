@@ -37,25 +37,34 @@
 
 ## ✨ 核心能力
 
-| 模块               | 说明                                       |
+| 模块 | 说明 |
 | ---------------- | ---------------------------------------- |
-| 🪄 AI 用例生成       | 自然语言需求 → 可执行步骤，支持 AI 元素描述，运行时定位          |
-| 🎯 智能定位与自愈       | CSS/XPath 失败时 AI 自动定位替代元素，缓存结果，静默重试      |
-| 👁️ 视觉回归         | 基线截图 + 像素比对 + AI 语义化差异说明，差异即失败           |
-| ⚡ API 测试         | Swagger 导入 → 正例 + 边界值生成；WireMock 智能 Mock |
-| 🔄 跨浏览器矩阵        | Chromium / Firefox / WebKit 一行命令并行展开     |
-| 📊 数据驱动          | 数据集绑定 + `{{变量}}` 占位符 + 内置函数 `{{$uuid}}`  |
-| 🧪 测试套件/计划       | 用例归集 + 一次运行聚合通过率 + 历史趋势                  |
-| 📝 脚本双向通道        | Playwright TS 脚本导入为平台用例 / 用例导出为 Git 脚本   |
-| 🖥️ 可视化编辑器       | 步骤拖拽编辑、元素选择器自动捕获、实时预览                    |
-| 📡 实时执行流         | SignalR 推送每一步状态，步骤截图即时展示                 |
-| 🧠 AI 失败诊断       | 失败后自动收集证据 → LLM 根因分析 + 修复建议              |
-| 📋 在线报告与分享       | 免登录只读链接 + 有效期 + 访问计数 + 可吊销               |
-| ⏰ 定时调度           | Cron 表达式 + NextRunAt 比较并交换抢占，多实例安全       |
-| 🔔 通知告警          | 企微 / 钉钉 / 飞书 / SMTP，执行结束推送摘要             |
-| 🌊 不稳定性检测        | 自动识别 flaky 用例 + 执行时多给一次重试                |
-| 🔗 CI/CD Webhook | 标准 REST 端点 + `wait=true` 阻塞等待 + 结果作构建判据  |
-| 🐳 容器化一键部署       | Docker Compose 全栈拉起，无插件、无客户端安装           |
+| 🪄 AI 用例生成 | 自然语言需求 → 可执行步骤，支持 AI 元素描述，运行时定位 |
+| 🎯 智能定位与自愈 | CSS/XPath 失败时 AI 自动定位替代元素，缓存结果，静默重试 |
+| 👁️ 视觉回归 | 基线截图 + 像素比对 + AI 语义化差异说明，差异即失败 |
+| ⚡ API 测试 | Swagger 导入 → 正例 + 边界值生成；WireMock 智能 Mock |
+| 🔄 跨浏览器矩阵 | Chromium / Firefox / WebKit 一行命令并行展开 |
+| 📊 数据驱动 | 数据集绑定 + `{{变量}}` 占位符 + 内置函数 `{{$uuid}}` |
+| 🧪 测试套件/计划 | 用例归集 + 一次运行聚合通过率 + 历史趋势 |
+| 📝 脚本双向通道 | Playwright TS 脚本导入为平台用例 / 用例导出为 Git 脚本 |
+| 🖥️ 可视化编辑器 | 步骤拖拽编辑、元素选择器自动捕获、实时预览 |
+| 📡 实时执行流 | SignalR 推送每一步状态，步骤截图即时展示 |
+| 🧠 AI 失败诊断 | 失败后自动收集证据 → LLM 根因分析 + 修复建议 |
+| 📋 在线报告与分享 | 免登录只读链接 + 有效期 + 访问计数 + 可吊销 |
+| ⏰ 定时调度 | Cron 表达式 + NextRunAt 比较并交换抢占，多实例安全 |
+| 🔔 通知告警 | 企微 / 钉钉 / 飞书 / SMTP，执行结束推送摘要 |
+| 🌊 不稳定性检测 | 自动识别 flaky 用例 + 执行时多给一次重试 |
+| 🔗 CI/CD Webhook | 标准 REST 端点 + `wait=true` 阻塞等待 + 结果作构建判据 |
+| 🤖 Agent 自愈闭环 | 失败 → 归因 → 应用修复 → 全用例重跑；破坏性动作强制人工审批 |
+| ✅ Agent 审批工作台 | 待审批 / 已批准 / 已拒绝 + 自愈度量看板；采纳即写入真实用例步骤 |
+| ⚡ 性能压测（k6） | 接口用例 / OpenAPI 一键生成脚本，VU 爬坡 + 阈值判定 + 指标报告 |
+| 🧩 共享步骤 | 步骤组复用 + 组内变量覆盖，一处修改处处生效 |
+| 🗂️ 需求覆盖 | 需求 ↔ 用例关联，覆盖率与未覆盖需求追踪 |
+| ♿ 无障碍扫描 | 内置 axe-core，按 WCAG 级别做断言 |
+| 🔐 SSO 单点登录 | OIDC 授权码流程 + 企业身份绑定，与本地账号并存 |
+| 🛡️ 审计日志 | 写操作留痕（谁 / 何时 / 改了什么），可按资源与操作检索 |
+| 📨 消息中心 | 站内消息 + 未读角标 + 分类筛选，执行与审批事件自动推送 |
+| 🐳 容器化一键部署 | Docker Compose 全栈拉起，无插件、无客户端安装 |
 
 ## 🧰 技术栈
 
@@ -70,8 +79,9 @@
 │ Element Plus│ AIWorker (FastAPI)│ SignalR (实时推送)              │
 │ Vite + Pinia│ DeepSeek LLM      │ Docker Compose                 │
 │ .NET 8 API  │ WireMock.NET      │ Nginx (反代)                    │
-│ EF Core 8   │ Pillow (视觉)     │ JWT + CORS                      │
+│ EF Core 8   │ Pillow (视觉)      │ JWT + CORS + OIDC SSO          │
 │ Minimal API │ OpenApi Readers   │ Webhook Token                   │
+│ SignalR Hub │ k6 · Polly 8      │ axe-core (无障碍)                │
 └─────────────┴───────────────────┴───────────────────────────────┘
 ```
 
@@ -92,12 +102,12 @@ bash scripts/start-all.sh
 
 启动完成后：
 
-| 服务          | 地址                                                  |
+| 服务 | 地址 |
 | ----------- | --------------------------------------------------- |
-| 🖥️ 前端页面    | <http://localhost:3000> （账号 `admin / Admin@123456`） |
-| 🔌 后端 API   | <http://localhost:5210>                             |
-| 📖 Swagger  | <http://localhost:5210/swagger>                     |
-| 🤖 AIWorker | <http://127.0.0.1:8000>                             |
+| 🖥️ 前端页面 | <http://localhost:3000> （账号 `admin / Admin@123456`） |
+| 🔌 后端 API | <http://localhost:5210> |
+| 📖 Swagger | <http://localhost:5210/swagger> |
+| 🤖 AIWorker | <http://127.0.0.1:8000> |
 
 **线上体验地址**：<http://111.231.19.163:8088> （账号 `demo / Demo@13456`）
 
@@ -120,18 +130,22 @@ cp .env.example .env                   # 填写 4 个必填项
 docker compose up -d --build
 ```
 
-| 服务             | 端口   |
+| 服务 | 端口 |
 | -------------- | ---- |
 | frontend（唯一入口） | 8088 |
-| backend API    | 8002 |
-| aiworker       | 8001 |
-| postgres（仅回环）  | 5432 |
+| backend API | 8002 |
+| aiworker | 8001 |
+| postgres（仅回环） | 5432 |
+
+> **控制面 / 执行面可拆**：单实例部署用默认的 `Execution__Role=All`（同进程，行为与拆分前完全一致）。
+> 需要横向扩执行节点时，用 `Execution__Role=WorkerOnly` 起纯执行实例——它不映射任何 HTTP 端点，
+> 只靠 PostgreSQL 的 `FOR UPDATE SKIP LOCKED` 抢占任务，因此不必挂在 Nginx 后面。
 
 ## 📸 界面预览
 
 > 以下是来自部分功能页面截图
 
-|  |  |
+| | |
 | :---: | :---: |
 | ![仪表盘](docs/assets/screenshots/dashboard.png) | ![项目管理](docs/assets/screenshots/projects.png) |
 | **仪表盘** · 质量趋势 / 达标态势 / 定时任务健康 | **项目管理** · 多项目隔离与环境配置 |
@@ -211,6 +225,17 @@ cd backend/src/AIWorker && python -m pytest tests/ -q
 cd frontend && npm run test && npm run type-check && npm run build
 ```
 
+### 质量门禁（CI）
+
+| 工作流 | 内容 |
+| ------------------ | ------------------------------------------------------------------ |
+| `ci.yml` | 整解编译 → 后端单测 + 覆盖率棘轮（Api ≥ 10% / Application ≥ 68%，只可上调）→ 前端类型检查 + 单测 |
+| `contract-drift.yml` | 起后端取 Swagger → `api:types:check` 校验前端类型未与接口漂移 → `api:responses:check` 用真实响应逐字段比对声明的 schema |
+
+契约校验默认在**空库**下跑，会有一批依赖业务数据的端点被静默跳过——门禁看着是绿的，其实没验。
+`SEED=1` 会按依赖顺序造数（项目 / 用例 / 计划 / 套件 / 数据集 / 共享步骤…）、跑完再反序清理，
+让门禁不再因"数据不存在"而放空。
+
 ## 🗺️ 路线图
 
 - ✅ **M1 基础平台搭建**
@@ -218,9 +243,11 @@ cd frontend && npm run test && npm run type-check && npm run build
 - ✅ **M3 AI 用例生成**（文本需求 → 步骤）
 - ✅ **M4 智能执行**（AI 定位自愈 / SignalR 实时流）
 - ✅ **M5 接口测试**（Swagger 导入 / Mock / AI 业务流）
-- ✅ **M6 诊断与优化**（AI 失败诊断 / CI Webhook / Flake 隔离 / 审计日志/ 消息中心）
-- 🔜 **M7 企业特性**（SSO / 多租户 / Grafana 仪表盘）
-- 🔜 **M8 Agent 化**（LLM Agent 自主规划测试 → 执行 → 归因闭环）
+- ✅ **M6 诊断与优化**（AI 失败诊断 / CI Webhook / Flake 隔离 / 审计日志 / 消息中心）
+- 🚧 **M7 企业特性**（SSO 单点登录 ✅ / 项目成员隔离 ✅ / Grafana 仪表盘 待做）
+- ✅ **M8 Agent 化**（失败 → 归因 → 修复 → 重跑闭环；Planner 重规划；人工审批工作台 + 自愈度量看板）
+- ✅ **M9 平台韧性**（HTTP 弹性策略：重试 / 熔断 / 超时 / 并发限制）
+- ✅ **M10 质量与容量**（k6 压测集成 / CI 门禁接线 / 契约响应校验 / 控制面·执行面解耦）
 
 ## 🤝 贡献
 
