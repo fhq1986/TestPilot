@@ -468,6 +468,9 @@ public class TestDbContext : DbContext
             // 证据/动作按项目既有约定用 jsonb（查库排障时可按内容过滤）
             entity.Property(a => a.FailureEvidence).HasColumnType("jsonb");
             entity.Property(a => a.AppliedActions).HasColumnType("jsonb");
+            // 提议的动作（供「采纳」落库用）。与 AppliedActions 分开存：后者对需审批的
+            // 尝试必然为空（循环在应用动作前就 break 了），采纳流程不能依赖它。
+            entity.Property(a => a.ProposedFixes).HasColumnType("jsonb");
             // LLM 原始返回：应用层截断到 8000（省略号计入上限，防 Postgres 22001 静默丢记录）
             entity.Property(a => a.DiagnosisRaw).HasMaxLength(8000);
             entity.Property(a => a.FixSummary).HasMaxLength(2000);

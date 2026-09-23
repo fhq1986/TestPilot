@@ -44,6 +44,12 @@ public static class FixActionApplier
             error = $"动作 {action.ActionType} 不受支持，已跳过";
             return false;
         }
+        // LLM 可能给 "params": null / 缺字段——那是外部输入，不能当内部不变量信
+        if (action.Params is null)
+        {
+            error = $"{action.ActionType} 缺少 params";
+            return false;
+        }
 
         switch (action.ActionType)
         {
@@ -178,7 +184,7 @@ public static class FixActionApplier
         }
 
         // 没给 step_order（或找不到）：追加一个 Wait 到末尾
-        steps.Add(NewWaitStep(ms));
+        AppendAt(steps, NewWaitStep(ms));
         Renumber(steps);
         return true;
     }
@@ -224,6 +230,12 @@ public static class FixActionApplier
             config.Url = url.Trim();
         }
         if (TryGetString(action.Params, out var value, "value")) config.Value = value;
+        // LLM 常把等待时长写成 timeout_ms（那是 wait_strategy 的参数名）而不是 value。
+        // Wait 步骤缺正整数 Value 会在执行期直接抛「Wait 需要正整数毫秒数」，
+        // 采纳后立刻变成一条必然失败的步骤，所以这里按动作类型兜一下。
+        else if (actionType == ActionType.Wait &&
+                 TryGetInt(action.Params, out var waitMs, "timeout_ms", "milliseconds", "ms", "wait_ms"))
+            config.Value = Math.Clamp(waitMs, 100, 120_000).ToString();
         if (TryGetString(action.Params, out var attribute, "attribute")) config.Attribute = attribute;
         if (TryGetString(action.Params, out var selValue, "selector_value", "locator_value") &&
             !string.IsNullOrWhiteSpace(selValue))
@@ -253,7 +265,7 @@ public static class FixActionApplier
         if (TryGetInt(action.Params, out var position, "position", "before_step_order", "step_order"))
             InsertAt(steps, position, newStep);
         else
-            steps.Add(newStep);
+            AppendAt(steps, newStep);
         Renumber(steps);
         return true;
     }
@@ -283,6 +295,10 @@ public static class FixActionApplier
         ordered.Insert(index, step);
         for (var i = 0; i < ordered.Count; i++)
             ordered[i].StepOrder = i;
+
+        // 列表本身也要跟着重排：否则后续的 InsertAt 会按"过期的列表顺序"插错位置
+        steps.Clear();
+        foreach (var s in ordered) steps.Add(s);
         return true;
     }
 
@@ -307,24 +323,47 @@ public static class FixActionApplier
         return true;
     }
 
+    /// <summary>
+    /// 在 <paramref name="beforeOrder"/> 之前插入，并保持 <paramref name="steps"/> 与 StepOrder 同序。
+    ///
+    /// ⚠ 不能直接 <c>steps.Insert(index, …)</c>：index 是按**排序后**的列表算的，
+    /// 而 steps 本身的顺序未必一致，插进去就错位了。更隐蔽的是新建步骤的 StepOrder
+    /// 默认是 0，若不显式赋值，紧随其后的 Renumber 会把它排到队首——
+    /// 表现为"采纳后登录步骤跑到 Navigate 之后"，等于把修复搞坏。
+    /// </summary>
     private static void InsertAt(IList<TestStep> steps, int beforeOrder, TestStep newStep)
     {
-        var index = 0;
         var ordered = steps.OrderBy(s => s.StepOrder).ToList();
+        var index = ordered.Count;
         for (var i = 0; i < ordered.Count; i++)
         {
             if (ordered[i].StepOrder >= beforeOrder) { index = i; break; }
-            index = i + 1;
         }
-        steps.Insert(index, newStep);
+
+        newStep.StepOrder = beforeOrder;
+        ordered.Insert(index, newStep);
+
+        steps.Clear();
+        foreach (var s in ordered) steps.Add(s);
+    }
+
+    /// <summary>追加到末尾。新建步骤的 StepOrder 默认为 0，必须显式给一个最大的，否则重排后会插到队首。</summary>
+    private static void AppendAt(IList<TestStep> steps, TestStep newStep)
+    {
+        newStep.StepOrder = steps.Count == 0 ? 0 : steps.Max(s => s.StepOrder) + 1;
+        steps.Add(newStep);
     }
 
     /// <summary>结构变更后统一重排 StepOrder，保证与执行器的顺序语义、结果映射一致。</summary>
     private static void Renumber(IList<TestStep> steps)
     {
+        // 顺带把列表本身也整理成与 StepOrder 同序：后续的 InsertAt 按位置插入，
+        // 列表顺序一旦和 StepOrder 脱钩就会插错地方（见 InsertAt 的说明）
         var ordered = steps.OrderBy(s => s.StepOrder).ToList();
-        for (var i = 0; i < ordered.Count; i++)
-            ordered[i].StepOrder = i;
+        steps.Clear();
+        foreach (var s in ordered) steps.Add(s);
+        for (var i = 0; i < steps.Count; i++)
+            steps[i].StepOrder = i;
     }
 
     private static TestStep NewWaitStep(int ms) => new()

@@ -318,6 +318,9 @@ public static class ExecutionApiExtensions
 
         // M8 Agent 审批：采纳一次「需人工审批」的修复。
         // 采纳 = 把修复应用到**真实 TestStep**（与执行期只改副本相反）并持久化；破坏性/未实现的动作会被 FixActionApplier 拒绝。
+        //
+        // 数据来源是 ProposedFixes 而**不是** AppliedActions：需审批的尝试在自愈循环里
+        // 应用动作之前就 break 了，AppliedActions 对它必然为空——曾因此导致「采纳后步骤毫无变化」。
         group.MapPost("/agent-attempts/{attemptId:guid}/approve", async (
             Guid attemptId, TestDbContext db, ICurrentUser currentUser, CancellationToken ct) =>
         {
@@ -329,42 +332,23 @@ public static class ExecutionApiExtensions
             if (attempt.Approved is not null)
                 return Results.BadRequest(new { message = "该尝试已处理" });
 
-            var applied = 0;
-            try
-            {
-                var fixes = string.IsNullOrWhiteSpace(attempt.AppliedActions)
-                    ? new List<FixActionDto>()
-                    // ⚠ 必须用 Web 选项反序列化：AppliedActions 是以 camelCase 序列化的，
-                    // 用默认选项会因大小写不匹配而绑定失败（字段全 null）
-                    : System.Text.Json.JsonSerializer.Deserialize<List<FixActionDto>>(
-                        attempt.AppliedActions,
-                        new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))
-                      ?? new List<FixActionDto>();
-                var ctx = await db.Executions.AsNoTracking()
-                    .Where(e => e.Id == attempt.ExecutionId)
-                    .Select(e => new
-                    {
-                        e.TestCaseId,
-                        BaseUrl = e.TestCase != null ? e.TestCase.BaseUrl : null,
-                    })
-                    .FirstOrDefaultAsync(ct);
-                if (ctx?.TestCaseId is { } cid && fixes.Count > 0)
+            var fixes = DeserializeProposedFixes(attempt.ProposedFixes);
+            var ctx = await db.Executions.AsNoTracking()
+                .Where(e => e.Id == attempt.ExecutionId)
+                .Select(e => new
                 {
-                    var steps = await db.TestSteps
-                        .Where(s => s.TestCaseId == cid)
-                        .OrderBy(s => s.StepOrder)
-                        .ToListAsync(ct);
-                    foreach (var fix in fixes)
-                    {
-                        // 采纳同样走 URL 同源校验（baseUrl）与全部安全校验
-                        if (FixActionApplier.TryApply(steps, fix, out _, ctx.BaseUrl))
-                            applied++;
-                    }
-                }
-            }
-            catch (System.Text.Json.JsonException)
+                    e.TestCaseId,
+                    BaseUrl = e.TestCase != null ? e.TestCase.BaseUrl : null,
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var applied = 0;
+            var rejected = new List<AgentFixPersister.RejectedFix>();
+            if (ctx?.TestCaseId is { } cid && fixes.Count > 0)
             {
-                applied = 0;
+                var result = await AgentFixPersister.ApplyAsync(db, cid, ctx.BaseUrl, fixes, ct);
+                applied = result.Applied;
+                rejected = result.Rejected.ToList();
             }
 
             attempt.Approved = true;
@@ -372,7 +356,7 @@ public static class ExecutionApiExtensions
             attempt.ApprovedAt = DateTime.UtcNow;
             attempt.Persisted = applied > 0;
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { applied });
+            return Results.Ok(new { applied, rejected });
         }).WithPermission(Permission.ManageTestCases).WithAudit("Approve", "AgentAttempt");
 
         // M8 Agent 审批：驳回一次待审批修复（不改动用例）。
@@ -553,6 +537,28 @@ public static class ExecutionApiExtensions
         }).WithPermission(Permission.ViewExecutions);
 
         return group;
+    }
+
+    /// <summary>
+    /// 解析 attempt 的提议动作。
+    /// ⚠ 必须用 Web 选项：ProposedFixes 是以 camelCase 序列化的，用默认选项会因大小写
+    /// 不匹配而绑定失败（字段全 null，动作白名单直接判为"不受支持"）。
+    /// </summary>
+    private static List<FixActionDto> DeserializeProposedFixes(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new List<FixActionDto>();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<FixActionDto>>(
+                json, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))
+                ?? new List<FixActionDto>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // 数据损坏（例如历史行被截断）时不抛 500，交给调用方按"无可应用动作"处理
+            return new List<FixActionDto>();
+        }
     }
 }
 

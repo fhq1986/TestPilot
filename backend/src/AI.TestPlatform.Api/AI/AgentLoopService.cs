@@ -180,6 +180,12 @@ public class AgentLoopService
                 Confidence = attributed.Confidence,
                 FixSummary = Truncate(attributed.SuggestedFix, 2000),
                 NeedsApproval = attributed.NeedsHumanApproval,
+                // 提议的动作必须在这里就留痕：下面的审批分支会直接 break，
+                // 走不到「应用修复」那段（AppliedActions 对它永远为空），
+                // 而人工「采纳」需要原始动作才能落库。不截断——截断会让 JSON 失效。
+                ProposedFixes = attributed.ProposedFixes.Count > 0
+                    ? JsonSerializer.Serialize(attributed.ProposedFixes, JsonOpts)
+                    : null,
                 CreatedAt = DateTime.UtcNow,
             };
             _db.AgentAttempts.Add(record);

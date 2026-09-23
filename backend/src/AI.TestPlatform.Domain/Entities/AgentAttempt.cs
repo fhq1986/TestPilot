@@ -38,6 +38,17 @@ public class AgentAttempt
     public string? AppliedActions { get; set; }
     public bool AppliedSuccessfully { get; set; }
 
+    /// <summary>
+    /// LLM **提议**的修复动作（jsonb）：List&lt;FixActionDto&gt;。
+    ///
+    /// 与 <see cref="AppliedActions"/> 的区别是语义而非粗细：那是"已应用的 diff"，
+    /// 这是"待采纳的提议"。需人工审批的尝试在自愈循环里就 break 了（尚未应用任何动作），
+    /// 所以 <see cref="AppliedActions"/> 对它**必然为空**——「采纳」只能依据本字段落库。
+    /// 不复用 <see cref="DiagnosisRaw"/> 是因为那是调试用字段、被截断到 8000 字符，
+    /// 超限后 JSON 直接不合法，会让采纳静默变成 no-op。
+    /// </summary>
+    public string? ProposedFixes { get; set; }
+
     /// <summary>该修复是否已被"采纳"落库到用例（Phase 2，默认 false）</summary>
     public bool Persisted { get; set; }
 

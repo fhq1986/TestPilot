@@ -46,9 +46,17 @@ export const getAgentApprovals = (params: {
 }) =>
   request.get<unknown, PagedResult<AgentApprovalItem>>('/executions/agent-approvals', { params })
 
+/** 采纳时被安全校验拒绝的动作（动作白名单 / 参数非法 / URL 越出被测站点等） */
+export interface RejectedAgentFix {
+  actionType: string
+  reason: string
+}
+
 /** 采纳一次待审批修复（应用到真实用例步骤） */
 export const approveAgentAttempt = (attemptId: string) =>
-  request.post<unknown, { applied: number }>(`/executions/agent-attempts/${attemptId}/approve`)
+  request.post<unknown, { applied: number; rejected: RejectedAgentFix[] }>(
+    `/executions/agent-attempts/${attemptId}/approve`,
+  )
 
 /** 驳回一次待审批修复（不改动用例） */
 export const rejectAgentAttempt = (attemptId: string) =>

@@ -216,7 +216,20 @@ const approve = async (row: AgentApprovalItem) => {
   acting.value = row.attemptId
   try {
     const res = await approveAgentAttempt(row.attemptId)
-    ElMessage.success(res?.applied ? `已采纳并应用到 ${res.applied} 个步骤` : '已标记采纳（无可用动作可应用）')
+    const applied = res?.applied ?? 0
+    const rejected = res?.rejected ?? []
+    if (applied > 0 && rejected.length === 0) {
+      ElMessage.success(`已采纳并应用到 ${applied} 个步骤`)
+    } else if (applied > 0) {
+      // 部分成功必须说清楚：被拒的动作没进用例，用户需要知道差在哪
+      ElMessage.warning(
+        `已应用 ${applied} 个动作，另有 ${rejected.length} 个被安全校验拒绝：${rejected.map((r) => r.reason).join('；')}`,
+      )
+    } else if (rejected.length > 0) {
+      ElMessage.error(`采纳未生效，${rejected.length} 个动作全部被拒：${rejected.map((r) => r.reason).join('；')}`)
+    } else {
+      ElMessage.warning('已标记采纳，但该建议没有可落地的结构化动作')
+    }
     await load()
   } finally {
     acting.value = null
