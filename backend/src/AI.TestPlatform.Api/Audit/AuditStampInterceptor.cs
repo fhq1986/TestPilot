@@ -72,7 +72,12 @@ public sealed class AuditStampInterceptor : SaveChangesInterceptor
 
             if (entry.State == EntityState.Added)
             {
-                props.CreatedById?.SetValue(entry.Entity, userId);
+                // 只补"没写过的"：与下面 CreatedAt 同一条规则。显式指定创建人的位点
+                // （种子数据、后台/Worker 以系统身份写入）不能被上下文里的当前用户覆盖；
+                // 而**没有** HTTP 上下文时 userId 为 null，若无条件写入会把非空 Guid 列
+                // 打成 Guid.Empty —— 直接触发外键违约（整表插入失败，且报错只说 FK 不说原因）。
+                if (userId is { } uid && IsUnsetGuid(props.CreatedById?.GetValue(entry.Entity)))
+                    props.CreatedById?.SetValue(entry.Entity, uid);
                 // 只补"没写过的"：实体若已显式 stamp 了 CreatedAt，就不能覆盖成 SaveChanges 这一刻。
                 // 否则业务上更早设置的字段会晚于它——AgentAttempt 在自愈循环里记 CreatedAt（尝试开始），
                 // 循环结束才 SaveChanges，被覆盖后 CreatedAt 反而晚于 CompletedAt，耗时算出来是负数
@@ -97,6 +102,14 @@ public sealed class AuditStampInterceptor : SaveChangesInterceptor
     {
         null => true,
         DateTime dt => dt == default,
+        _ => false,
+    };
+
+    /// <summary>CreatedById 是否尚未写入（Guid 看 default，Guid? 看 null）</summary>
+    private static bool IsUnsetGuid(object? value) => value switch
+    {
+        null => true,
+        Guid id => id == Guid.Empty,
         _ => false,
     };
 }

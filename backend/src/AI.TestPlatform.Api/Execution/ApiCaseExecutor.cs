@@ -108,11 +108,17 @@ public class ApiCaseExecutor
             throw new StepExecutionException(
                 "端点中不要写 {BaseUrl}：相对路径直接写 /api/xxx 即可，BaseUrl 会自动拼接（用例未配置时使用执行环境的地址）");
 
-        if (Uri.TryCreate(endpoint, UriKind.Absolute, out _))
-            return endpoint;
-        if (string.IsNullOrWhiteSpace(_baseUrl))
-            throw new StepExecutionException("相对路径需要用例 BaseUrl（可在用例编辑页填写，或为执行环境配置 BaseUrl）");
-        return _baseUrl.TrimEnd('/') + "/" + endpoint.TrimStart('/');
+        // ⚠ 判定「是不是绝对地址」必须只认 http/https，不能只问 Uri.TryCreate：
+        // 在 Unix（Linux 容器 / WSL）上，以 "/" 开头的站内路径会被 .NET 当成绝对 file 路径，
+        // 于是 "/login" 这类相对端点被当绝对地址原样返回、不拼 BaseUrl，
+        // HttpClient 随即抛 "Either the request URI must be an absolute URI or BaseAddress must be set"。
+        // 同一个坑 UrlResolver 已经处理过一次（见其注释），这里复用同一口径，不再自己写第二份。
+        var resolved = UrlResolver.Resolve(endpoint, _baseUrl);
+        if (Uri.TryCreate(resolved, UriKind.Absolute, out var abs) &&
+            (abs.Scheme == Uri.UriSchemeHttp || abs.Scheme == Uri.UriSchemeHttps))
+            return resolved;
+
+        throw new StepExecutionException("相对路径需要用例 BaseUrl（可在用例编辑页填写，或为执行环境配置 BaseUrl）");
     }
 
     public static string Summarize(ApiResponse response) =>
