@@ -50,7 +50,9 @@
       </div>
 
       <div class="table-wrap">
-        <el-table v-loading="loading" :data="items" height="100%" border class="wrap-table">
+        <!-- :key=activeTab：审批时间列会随 tab 增删，而首末两列是 fixed 的，
+             固定列宽依赖列集合，动态变更时容易残留错位；换 tab 顺带重建整张表最省心 -->
+        <el-table :key="activeTab" v-loading="loading" :data="items" height="100%" border class="wrap-table">
           <el-table-column label="用例" width="180" fixed="left">
             <template #default="{ row }">
               <el-link type="primary" @click="openExecution(row.executionId)">{{ row.testCaseName }}</el-link>
@@ -75,8 +77,13 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="时间" width="130">
+          <el-table-column label="创建时间" width="130">
             <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+          </el-table-column>
+          <!-- 审批时间只在已批准 / 已拒绝下出现：待审批的行 approvedAt 必然是空，
+               摆一列全「—」既占宽度又没信息。列名随 tab 切换，读起来是「批准的/拒绝的那一刻」 -->
+          <el-table-column v-if="activeTab !== 'pending'" :label="approvalTimeLabel" width="130">
+            <template #default="{ row }">{{ formatDateTime(row.approvedAt) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
@@ -205,6 +212,9 @@ const onPageSizeChange = (size: number) => {
 }
 
 const openExecution = (id: string) => router.push(`/executions/${id}`)
+
+/** 审批时间列名随 tab 走：一个 attempt 只会被批准或拒绝其中之一，不需要两列 */
+const approvalTimeLabel = computed(() => (activeTab.value === 'approved' ? '批准时间' : '拒绝时间'))
 
 const approve = async (row: AgentApprovalItem) => {
   const confirmed = await ElMessageBox.confirm(
